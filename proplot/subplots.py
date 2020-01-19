@@ -15,8 +15,8 @@ import matplotlib.transforms as mtransforms
 import matplotlib.gridspec as mgridspec
 from numbers import Integral
 from .rctools import rc
-from .utils import _warn_proplot, _notNone, _counter, _setstate, units  # noqa
-from . import projs, axes
+from .cbook import _counter, _setstate, _notNone, _warn_proplot
+from . import axes, projs, utils
 try:  # use this for debugging instead of print()!
     from icecream import ic
 except ImportError:  # graceful fallback if IceCream isn't installed
@@ -28,7 +28,7 @@ __all__ = [
 ]
 
 # Translation
-SIDE_TRANSLATE = {
+SIDES_MAP = {
     'l': 'left',
     'r': 'right',
     'b': 'bottom',
@@ -562,7 +562,7 @@ def _get_panelargs(
     s = side[0]
     if s not in 'lrbt':
         raise ValueError(f'Invalid panel spec {side!r}.')
-    space = space_user = units(space)
+    space = space_user = utils.units(space)
     if share is None:
         share = (not filled)
     if width is None:
@@ -570,7 +570,7 @@ def _get_panelargs(
             width = rc['colorbar.width']
         else:
             width = rc['subplots.panelwidth']
-    width = units(width)
+    width = utils.units(width)
     if space is None:
         key = ('wspace' if s in 'lr' else 'hspace')
         pad = (rc['subplots.axpad'] if figure else rc['subplots.panelpad'])
@@ -581,29 +581,39 @@ def _get_panelargs(
 def _get_space(key, share=0, pad=None):
     """Return suitable default spacing given a shared axes setting."""
     if key == 'left':
-        space = units(_notNone(pad, rc['subplots.pad'])) + (
-            rc['ytick.major.size'] + rc['ytick.labelsize']
-            + rc['ytick.major.pad'] + rc['axes.labelsize']) / 72
+        space = utils.units(_notNone(pad, rc['subplots.pad'])) + (
+            rc['ytick.major.size']
+            + rc['ytick.labelsize']
+            + rc['ytick.major.pad']
+            + rc['axes.labelsize']
+        ) / 72
     elif key == 'right':
-        space = units(_notNone(pad, rc['subplots.pad']))
+        space = utils.units(_notNone(pad, rc['subplots.pad']))
     elif key == 'bottom':
-        space = units(_notNone(pad, rc['subplots.pad'])) + (
-            rc['xtick.major.size'] + rc['xtick.labelsize']
-            + rc['xtick.major.pad'] + rc['axes.labelsize']) / 72
+        space = utils.units(_notNone(pad, rc['subplots.pad'])) + (
+            rc['xtick.major.size']
+            + rc['xtick.labelsize']
+            + rc['xtick.major.pad']
+            + rc['axes.labelsize']
+        ) / 72
     elif key == 'top':
-        space = units(_notNone(pad, rc['subplots.pad'])) + (
-            rc['axes.titlepad'] + rc['axes.titlesize']) / 72
+        space = utils.units(_notNone(pad, rc['subplots.pad'])) + (
+            rc['axes.titlepad'] + rc['axes.titlesize']
+        ) / 72
     elif key == 'wspace':
-        space = (units(_notNone(pad, rc['subplots.axpad']))
-                 + rc['ytick.major.size'] / 72)
+        space = utils.units(_notNone(pad, rc['subplots.axpad'])) + (
+            rc['ytick.major.size']
+        ) / 72
         if share < 3:
             space += (rc['ytick.labelsize'] + rc['ytick.major.pad']) / 72
         if share < 1:
             space += rc['axes.labelsize'] / 72
     elif key == 'hspace':
-        space = units(_notNone(pad, rc['subplots.axpad'])) + (
-            rc['axes.titlepad'] + rc['axes.titlesize']
-            + rc['xtick.major.size']) / 72
+        space = utils.units(_notNone(pad, rc['subplots.axpad'])) + (
+            rc['axes.titlepad']
+            + rc['axes.titlesize']
+            + rc['xtick.major.size']
+        ) / 72
         if share < 3:
             space += (rc['xtick.labelsize'] + rc['xtick.major.pad']) / 72
         if share < 0:
@@ -720,7 +730,7 @@ def _subplots_geometry(**kwargs):
     auto_height = (height is None and width is not None)
     if width is None and height is None:  # get stuff directly from axes
         if axwidth is None and axheight is None:
-            axwidth = units(rc['subplots.axwidth'])
+            axwidth = utils.units(rc['subplots.axwidth'])
         if axheight is not None:
             auto_width = True
             axheight_all = (nrows_main * (axheight - rhspace)) / (dy * rhratio)
@@ -945,9 +955,11 @@ class Figure(mfigure.Figure):
         gridspec_kw = gridspec_kw or {}
         gridspec = GridSpec(self, **gridspec_kw)
         nrows, ncols = gridspec.get_active_geometry()
-        self._pad = units(_notNone(pad, rc['subplots.pad']))
-        self._axpad = units(_notNone(axpad, rc['subplots.axpad']))
-        self._panelpad = units(_notNone(panelpad, rc['subplots.panelpad']))
+        self._pad = utils.units(_notNone(pad, rc['subplots.pad']))
+        self._axpad = utils.units(_notNone(axpad, rc['subplots.axpad']))
+        self._panelpad = utils.units(_notNone(
+            panelpad, rc['subplots.panelpad']
+        ))
         self._auto_format = autoformat
         self._auto_tight = _notNone(tight, rc['tight'])
         self._include_panels = includepanels
@@ -978,7 +990,7 @@ class Figure(mfigure.Figure):
         if s not in 'lrbt':
             raise ValueError(f'Invalid side {side!r}.')
         ax = ax._panel_parent or ax  # redirect to main axes
-        side = SIDE_TRANSLATE[s]
+        side = SIDES_MAP[s]
         share, width, space, space_orig = _get_panelargs(
             s, filled=filled, figure=False, **kwargs
         )
@@ -1037,7 +1049,7 @@ class Figure(mfigure.Figure):
         s = side[0]
         if s not in 'lrbt':
             raise ValueError(f'Invalid side {side!r}.')
-        side = SIDE_TRANSLATE[s]
+        side = SIDES_MAP[s]
         _, width, space, space_orig = _get_panelargs(
             s, filled=True, figure=True, **kwargs
         )
@@ -1546,7 +1558,7 @@ class Figure(mfigure.Figure):
         exists = (idx not in (-1, len(panels)) and panels[idx] == entry)
         if exists:  # already exists!
             if spaces_orig[idx_space] is None:
-                spaces_orig[idx_space] = units(space_orig)
+                spaces_orig[idx_space] = utils.units(space_orig)
             spaces[idx_space] = _notNone(spaces_orig[idx_space], space)
         # Make room for new panel slot
         else:
@@ -2301,14 +2313,14 @@ def subplots(
             )
 
     # Standardized dimensions
-    width, height = units(width), units(height)
-    axwidth, axheight = units(axwidth), units(axheight)
+    width, height = utils.units(width), utils.units(height)
+    axwidth, axheight = utils.units(axwidth), utils.units(axheight)
     # Standardized user input border spaces
-    left, right = units(left), units(right)
-    bottom, top = units(bottom), units(top)
+    left, right = utils.units(left), utils.units(right)
+    bottom, top = utils.units(bottom), utils.units(top)
     # Standardized user input spaces
-    wspace = np.atleast_1d(units(_notNone(wspace, space)))
-    hspace = np.atleast_1d(units(_notNone(hspace, space)))
+    wspace = np.atleast_1d(utils.units(_notNone(wspace, space)))
+    hspace = np.atleast_1d(utils.units(_notNone(hspace, space)))
     if len(wspace) == 1:
         wspace = np.repeat(wspace, (ncols - 1,))
     if len(wspace) != ncols - 1:

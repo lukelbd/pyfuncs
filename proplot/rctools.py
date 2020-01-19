@@ -12,8 +12,9 @@ import numpy as np
 import cycler
 import matplotlib.colors as mcolors
 import matplotlib.cm as mcm
+from collections.abc import MutableMapping
 from numbers import Number
-from matplotlib import style, rcParams
+from matplotlib import style, rcsetup, rcParams
 try:  # use this for debugging instead of print()!
     from icecream import ic
 except ImportError:  # graceful fallback if IceCream isn't installed
@@ -21,10 +22,15 @@ except ImportError:  # graceful fallback if IceCream isn't installed
 try:
     import IPython
     from IPython import get_ipython
-except ModuleNotFoundError:
+except ImportError:
     def get_ipython():
         return
-from .utils import _warn_proplot, _counter, _benchmark, units
+from . import utils
+from .cbook import _benchmark, _counter, _warn_proplot
+from .validators import (
+    _validate_abcstyle, _validate_colorbar_loc, _validate_fontweight,
+    _validate_reso, _validate_title_loc, _validate_units,
+)
 
 # Disable mathtext "missing glyph" warnings
 import matplotlib.mathtext  # noqa
@@ -36,363 +42,6 @@ __all__ = [
     'rc', 'rc_configurator', 'ipython_autosave',
     'ipython_autoreload', 'ipython_matplotlib',
 ]
-
-# Dictionaries used to track custom proplot settings
-rcParamsShort = {}
-rcParamsLong = {}
-
-# Dictionaries containing default settings
-defaultParamsShort = {
-    'abc': False,
-    'align': False,
-    'alpha': 1,
-    'autoreload': 2,
-    'autosave': 30,
-    'borders': False,
-    'cmap': 'fire',
-    'coast': False,
-    'color': 'k',
-    'cycle': 'colorblind',
-    'facecolor': 'w',
-    'fontname': 'sans-serif',
-    'inlinefmt': 'retina',
-    'geogrid': True,
-    'grid': True,
-    'gridminor': False,
-    'gridratio': 0.5,
-    'innerborders': False,
-    'lakes': False,
-    'land': False,
-    'large': 10,
-    'linewidth': 0.6,
-    'lut': 256,
-    'margin': 0.0,
-    'matplotlib': 'auto',
-    'ocean': False,
-    'reso': 'lo',
-    'rgbcycle': False,
-    'rivers': False,
-    'share': 3,
-    'small': 9,
-    'span': True,
-    'tickdir': 'out',
-    'ticklen': 4.0,
-    'ticklenratio': 0.5,
-    'tickminor': True,
-    'tickpad': 2.0,
-    'tickratio': 0.8,
-    'tight': True,
-}
-defaultParamsLong = {
-    'abc.border': True,
-    'abc.color': 'k',
-    'abc.linewidth': 1.5,
-    'abc.loc': 'l',  # left side above the axes
-    'abc.size': None,  # = large
-    'abc.style': 'a',
-    'abc.weight': 'bold',
-    'axes.facealpha': None,  # if empty, depends on 'savefig.transparent'
-    'axes.formatter.timerotation': 90,
-    'axes.formatter.zerotrim': True,
-    'axes.geogrid': True,
-    'axes.gridminor': True,
-    'borders.color': 'k',
-    'borders.linewidth': 0.6,
-    'bottomlabel.color': 'k',
-    'bottomlabel.size': None,  # = large
-    'bottomlabel.weight': 'bold',
-    'coast.color': 'k',
-    'coast.linewidth': 0.6,
-    'colorbar.extend': '1.3em',
-    'colorbar.framealpha': 0.8,
-    'colorbar.frameon': True,
-    'colorbar.grid': False,
-    'colorbar.insetextend': '1em',
-    'colorbar.insetlength': '8em',
-    'colorbar.insetpad': '0.5em',
-    'colorbar.insetwidth': '1.2em',
-    'colorbar.length': 1,
-    'colorbar.loc': 'right',
-    'colorbar.width': '1.5em',
-    'geoaxes.edgecolor': None,  # = color
-    'geoaxes.facealpha': None,  # = alpha
-    'geoaxes.facecolor': None,  # = facecolor
-    'geoaxes.linewidth': None,  # = linewidth
-    'geogrid.alpha': 0.5,
-    'geogrid.color': 'k',
-    'geogrid.labels': False,
-    'geogrid.labelsize': None,  # = small
-    'geogrid.latmax': 90,
-    'geogrid.latstep': 20,
-    'geogrid.linestyle': ':',
-    'geogrid.linewidth': 1.0,
-    'geogrid.lonstep': 30,
-    'gridminor.alpha': None,  # = grid.alpha
-    'gridminor.color': None,  # = grid.color
-    'gridminor.linestyle': None,  # = grid.linewidth
-    'gridminor.linewidth': None,  # = grid.linewidth x gridratio
-    'image.edgefix': True,
-    'image.levels': 11,
-    'innerborders.color': 'k',
-    'innerborders.linewidth': 0.6,
-    'lakes.color': 'w',
-    'land.color': 'k',
-    'leftlabel.color': 'k',
-    'leftlabel.size': None,  # = large
-    'leftlabel.weight': 'bold',
-    'ocean.color': 'w',
-    'rightlabel.color': 'k',
-    'rightlabel.size': None,  # = large
-    'rightlabel.weight': 'bold',
-    'rivers.color': 'k',
-    'rivers.linewidth': 0.6,
-    'subplots.axpad': '1em',
-    'subplots.axwidth': '18em',
-    'subplots.pad': '0.5em',
-    'subplots.panelpad': '0.5em',
-    'subplots.panelwidth': '4em',
-    'suptitle.color': 'k',
-    'suptitle.size': None,  # = large
-    'suptitle.weight': 'bold',
-    'tick.labelcolor': None,  # = color
-    'tick.labelsize': None,  # = small
-    'tick.labelweight': 'normal',
-    'title.border': True,
-    'title.color': 'k',
-    'title.linewidth': 1.5,
-    'title.loc': 'c',  # centered above the axes
-    'title.pad': 3.0,  # copy
-    'title.size': None,  # = large
-    'title.weight': 'normal',
-    'toplabel.color': 'k',
-    'toplabel.size': None,  # = large
-    'toplabel.weight': 'bold',
-}
-defaultParams = {
-    'axes.grid': True,
-    'axes.labelpad': 3.0,
-    'axes.titlepad': 3.0,
-    'axes.titleweight': 'normal',
-    'axes.xmargin': 0.0,
-    'axes.ymargin': 0.0,
-    'figure.autolayout': False,
-    'figure.facecolor': '#f2f2f2',
-    'figure.max_open_warning': 0,
-    'figure.titleweight': 'bold',
-    'font.serif': (
-        'TeX Gyre Schola',  # Century lookalike
-        'TeX Gyre Bonum',  # Bookman lookalike
-        'TeX Gyre Termes',  # Times New Roman lookalike
-        'TeX Gyre Pagella',  # Palatino lookalike
-        'DejaVu Serif',
-        'Bitstream Vera Serif',
-        'Computer Modern Roman',
-        'Bookman',
-        'Century Schoolbook L',
-        'Charter',
-        'ITC Bookman',
-        'New Century Schoolbook',
-        'Nimbus Roman No9 L',
-        'Palatino',
-        'Times New Roman',
-        'Times',
-        'Utopia',
-        'serif'
-    ),
-    'font.sans-serif': (
-        'TeX Gyre Heros',  # Helvetica lookalike
-        'DejaVu Sans',
-        'Bitstream Vera Sans',
-        'Computer Modern Sans Serif',
-        'Arial',
-        'Avenir',
-        'Fira Math',
-        'Frutiger',
-        'Geneva',
-        'Gill Sans',
-        'Helvetica',
-        'Lucid',
-        'Lucida Grande',
-        'Myriad Pro',
-        'Noto Sans',
-        'Roboto',
-        'Source Sans Pro',
-        'Tahoma',
-        'Trebuchet MS',
-        'Ubuntu',
-        'Univers',
-        'Verdana',
-        'sans-serif'
-    ),
-    'font.monospace': (
-        'TeX Gyre Cursor',  # Courier lookalike
-        'DejaVu Sans Mono',
-        'Bitstream Vera Sans Mono',
-        'Computer Modern Typewriter',
-        'Andale Mono',
-        'Courier New',
-        'Courier',
-        'Fixed',
-        'Nimbus Mono L',
-        'Terminal',
-        'monospace'
-    ),
-    'font.cursive': (
-        'TeX Gyre Chorus',  # Chancery lookalike
-        'Apple Chancery',
-        'Felipa',
-        'Sand',
-        'Script MT',
-        'Textile',
-        'Zapf Chancery',
-        'cursive'
-    ),
-    'font.fantasy': (
-        'TeX Gyre Adventor',  # Avant Garde lookalike
-        'Avant Garde',
-        'Charcoal',
-        'Chicago',
-        'Comic Sans MS',
-        'Futura',
-        'Humor Sans',
-        'Impact',
-        'Optima',
-        'Western',
-        'xkcd',
-        'fantasy'
-    ),
-    'grid.alpha': 0.1,
-    'grid.color': 'k',
-    'grid.linestyle': '-',
-    'grid.linewidth': 0.6,
-    'hatch.color': 'k',
-    'hatch.linewidth': 0.6,
-    'legend.borderaxespad': 0,
-    'legend.borderpad': 0.5,
-    'legend.columnspacing': 1.0,
-    'legend.fancybox': False,
-    'legend.framealpha': 0.8,
-    'legend.frameon': True,
-    'legend.handlelength': 1.5,
-    'legend.handletextpad': 0.5,
-    'legend.labelspacing': 0.5,
-    'lines.linewidth': 1.3,
-    'lines.markersize': 3.0,
-    'mathtext.fontset': 'custom',
-    'mathtext.default': 'regular',
-    'savefig.bbox': 'standard',
-    'savefig.directory': '',
-    'savefig.dpi': 300,
-    'savefig.facecolor': 'white',
-    'savefig.format': 'pdf',
-    'savefig.pad_inches': 0.0,
-    'savefig.transparent': True,
-    'text.usetex': False,
-    'xtick.minor.visible': True,
-    'ytick.minor.visible': True,
-}
-
-# "Global" settings and the lower-level settings they change
-_rc_children = {
-    'cmap': (
-        'image.cmap',
-    ),
-    'lut': (
-        'image.lut',
-    ),
-    'alpha': (  # this is a custom setting
-        'axes.facealpha', 'geoaxes.facealpha',
-    ),
-    'facecolor': (
-        'axes.facecolor', 'geoaxes.facecolor'
-    ),
-    'fontname': (
-        'font.family',
-    ),
-    'color': (  # change the 'color' of an axes
-        'axes.edgecolor', 'geoaxes.edgecolor', 'axes.labelcolor',
-        'tick.labelcolor', 'hatch.color', 'xtick.color', 'ytick.color'
-    ),
-    'small': (  # the 'small' fonts
-        'font.size', 'tick.labelsize', 'xtick.labelsize', 'ytick.labelsize',
-        'axes.labelsize', 'legend.fontsize', 'geogrid.labelsize'
-    ),
-    'large': (  # the 'large' fonts
-        'abc.size', 'figure.titlesize',
-        'axes.titlesize', 'suptitle.size', 'title.size',
-        'leftlabel.size', 'toplabel.size',
-        'rightlabel.size', 'bottomlabel.size'
-    ),
-    'linewidth': (
-        'axes.linewidth', 'geoaxes.linewidth', 'hatch.linewidth',
-        'xtick.major.width', 'ytick.major.width'
-    ),
-    'margin': (
-        'axes.xmargin', 'axes.ymargin'
-    ),
-    'grid': (
-        'axes.grid',
-    ),
-    'gridminor': (
-        'axes.gridminor',
-    ),
-    'geogrid': (
-        'axes.geogrid',
-    ),
-    'ticklen': (
-        'xtick.major.size', 'ytick.major.size'
-    ),
-    'tickdir': (
-        'xtick.direction', 'ytick.direction'
-    ),
-    'labelpad': (
-        'axes.labelpad',
-    ),
-    'titlepad': (
-        'axes.titlepad',
-    ),
-    'tickpad': (
-        'xtick.major.pad', 'xtick.minor.pad',
-        'ytick.major.pad', 'ytick.minor.pad'
-    ),
-    'grid.color': (
-        'gridminor.color',
-    ),
-    'grid.linewidth': (
-        'gridminor.linewidth',
-    ),
-    'grid.linestyle': (
-        'gridminor.linestyle',
-    ),
-    'grid.alpha': (
-        'gridminor.alpha',
-    ),
-}
-
-# Mapping of settings without "dots" to their full names. This lets us pass
-# all settings as kwargs, e.g. ax.format(landcolor='b') instead of the much
-# more verbose ax.format(rc_kw={'land.color':'b'}).
-# WARNING: rcParamsShort has to be in here because Axes.format() only checks
-# _rc_nodots to filter out the rc kwargs!
-_rc_nodots = {
-    name.replace('.', ''): name
-    for names in (defaultParamsShort, defaultParamsLong, rcParams)
-    for name in names.keys()
-}
-
-# Category names, used for returning dicts of subcategory properties
-_rc_categories = {
-    *(
-        re.sub(r'\.[^.]*$', '', name)
-        for names in (defaultParamsLong, rcParams)
-        for name in names.keys()
-    ),
-    *(
-        re.sub(r'\..*$', '', name)
-        for names in (defaultParamsLong, rcParams)
-        for name in names.keys()
-    )
-}
 
 
 def _get_config_paths():
@@ -417,66 +66,43 @@ def _get_config_paths():
     return paths
 
 
-def _get_synced_params(key, value):
+def _sync_params(key, value):
     """Return dictionaries for updating the `rcParamsShort`, `rcParamsLong`,
     and `rcParams` properties associated with this key."""
     kw = {}  # builtin properties that global setting applies to
     kw_long = {}  # custom properties that global setting applies to
     kw_short = {}  # short name properties
 
+    # Convert units
+    # NOTE: Ideal method would be to have rc *lookups* convert to numeric
+    # units. For now, proplot code lets 'subplots' and 'colorbar' params
+    # sit in unconverted state (they have no rcParams children), but all
+    # other params are converted immediately. This lets us set e.g.
+    # titlepad and labelpad in 'em' or small in 'px'.
+    value_num = value
+    if key in (
+        'labelpad'
+        'large',
+        'linewidth',
+        'small',
+        'ticklen',
+        'tickpad',
+        'titlepad',
+    ):
+        value_num = utils.units(value, 'pt')
+
     # Skip full name keys
     key = _sanitize_key(key)
-    if '.' in key:
-        pass
-
-    # Cycler
-    elif key in ('cycle', 'rgbcycle'):
-        if key == 'rgbcycle':
-            cycle, rgbcycle = rcParamsShort['cycle'], value
-        else:
-            cycle, rgbcycle = value, rcParamsShort['rgbcycle']
-        try:
-            colors = mcm.cmap_d[cycle].colors
-        except (KeyError, AttributeError):
-            cycles = sorted(
-                name for name, cmap in mcm.cmap_d.items()
-                if isinstance(cmap, mcolors.ListedColormap)
-            )
-            raise ValueError(
-                f'Invalid cycle name {cycle!r}. Options are: '
-                ', '.join(map(repr, cycles)) + '.'
-            )
-        if rgbcycle and cycle.lower() == 'colorblind':
-            regcolors = colors + [(0.1, 0.1, 0.1)]
-        elif mcolors.to_rgb('r') != (1.0, 0.0, 0.0):  # reset
-            regcolors = [
-                (0.0, 0.0, 1.0),
-                (1.0, 0.0, 0.0),
-                (0.0, 1.0, 0.0),
-                (0.75, 0.75, 0.0),
-                (0.75, 0.75, 0.0),
-                (0.0, 0.75, 0.75),
-                (0.0, 0.0, 0.0)
-            ]
-        else:
-            regcolors = []  # no reset necessary
-        for code, color in zip('brgmyck', regcolors):
-            rgb = mcolors.to_rgb(color)
-            mcolors.colorConverter.colors[code] = rgb
-            mcolors.colorConverter.cache[code] = rgb
-        kw['patch.facecolor'] = colors[0]
-        kw['axes.prop_cycle'] = cycler.cycler('color', colors)
 
     # Zero linewidth almost always means zero tick length
-    elif key == 'linewidth' and _to_points(key, value) == 0:
-        _, ikw_long, ikw = _get_synced_params('ticklen', 0)
-        kw.update(ikw)
-        kw_long.update(ikw_long)
+    if key == 'linewidth' and value_num == 0:
+        kw['xtick.major.size'] = kw['ytick.major.size'] \
+            = kw['xtick.minor.size'] = kw['ytick.minor.size'] = 0
 
     # Tick length/major-minor tick length ratio
     elif key in ('ticklen', 'ticklenratio'):
         if key == 'ticklen':
-            ticklen = _to_points(key, value)
+            ticklen = value_num
             ratio = rcParamsShort['ticklenratio']
         else:
             ticklen = rcParamsShort['ticklen']
@@ -487,7 +113,7 @@ def _get_synced_params(key, value):
     # Spine width/major-minor tick width ratio
     elif key in ('linewidth', 'tickratio'):
         if key == 'linewidth':
-            tickwidth = _to_points(key, value)
+            tickwidth = value_num
             ratio = rcParamsShort['tickratio']
         else:
             tickwidth = rcParamsShort['linewidth']
@@ -498,7 +124,7 @@ def _get_synced_params(key, value):
     # Gridline width
     elif key in ('grid.linewidth', 'gridratio'):
         if key == 'grid.linewidth':
-            gridwidth = _to_points(key, value)
+            gridwidth = value_num
             ratio = rcParamsShort['gridratio']
         else:
             gridwidth = rcParams['grid.linewidth']
@@ -543,21 +169,59 @@ def _get_synced_params(key, value):
         kw['axes.grid'] = value
         kw['axes.grid.which'] = which
 
-    # Now update linked settings
-    value = _to_points(key, value)
+    # Cycler
+    elif key in ('cycle', 'rgbcycle'):
+        if key == 'rgbcycle':
+            cycle, rgbcycle = rcParamsShort['cycle'], value
+        else:
+            cycle, rgbcycle = value, rcParamsShort['rgbcycle']
+        try:
+            colors = mcm.cmap_d[cycle].colors
+        except (KeyError, AttributeError):
+            cycles = sorted(
+                name for name, cmap in mcm.cmap_d.items()
+                if isinstance(cmap, mcolors.ListedColormap)
+            )
+            raise ValueError(
+                f'Invalid cycle name {cycle!r}. Options are: '
+                ', '.join(map(repr, cycles)) + '.'
+            )
+        if rgbcycle and cycle.lower() == 'colorblind':
+            regcolors = colors + [(0.1, 0.1, 0.1)]
+        elif mcolors.to_rgb('r') != (1.0, 0.0, 0.0):  # reset
+            regcolors = [
+                (0.0, 0.0, 1.0),
+                (1.0, 0.0, 0.0),
+                (0.0, 1.0, 0.0),
+                (0.75, 0.75, 0.0),
+                (0.75, 0.75, 0.0),
+                (0.0, 0.75, 0.75),
+                (0.0, 0.0, 0.0)
+            ]
+        else:
+            regcolors = []  # no reset necessary
+        for code, color in zip('brgmyck', regcolors):
+            rgb = mcolors.to_rgb(color)
+            mcolors.colorConverter.colors[code] = rgb
+            mcolors.colorConverter.cache[code] = rgb
+        kw['patch.facecolor'] = colors[0]
+        kw['axes.prop_cycle'] = cycler.cycler('color', colors)
+
+    # Update output dictionaries
     if key in rcParamsShort:
         kw_short[key] = value
+        _, _, _, *children = defaultParamsShort[key]
+        for name in children:
+            if name in rcParamsLong:
+                kw_long[name] = value_num
+            else:
+                kw[name] = value_num
     elif key in rcParamsLong:
-        kw_long[key] = value
+        kw_long[key] = value_num
     elif key in rcParams:
-        kw[key] = value
+        kw[key] = value_num
     else:
         raise KeyError(f'Invalid key {key!r}.')
-    for name in _rc_children.get(key, ()):
-        if name in rcParamsLong:
-            kw_long[name] = value
-        else:
-            kw[name] = value
     return kw_short, kw_long, kw
 
 
@@ -570,20 +234,6 @@ def _sanitize_key(key):
     return key.lower()
 
 
-def _to_points(key, value):
-    """Convert certain rc keys to the units "points"."""
-    # TODO: Incorporate into more sophisticated validation system
-    # See: https://matplotlib.org/users/customizing.html, all props matching
-    # the below strings use the units 'points', except custom categories!
-    if (
-        isinstance(value, str)
-        and key.split('.')[0] not in ('colorbar', 'subplots')
-        and re.match('^.*(width|space|size|pad|len|small|large)$', key)
-    ):
-        value = units(value, 'pt')
-    return value
-
-
 def _update_from_file(file):
     """
     Apply updates from a file. This is largely copied from matplotlib.
@@ -593,10 +243,10 @@ def _update_from_file(file):
     file : str
         The path.
     """
-    cnt = 0
     file = os.path.expanduser(file)
     added = set()
     with open(file, 'r') as fd:
+        cnt = 0
         for line in fd:
             # Read file
             cnt += 1
@@ -606,7 +256,7 @@ def _update_from_file(file):
             pair = stripped.split(':', 1)
             if len(pair) != 2:
                 _warn_proplot(
-                    f'Illegal line #{cnt} in file {file!r}:\n{line!r}"'
+                    f'Illegal line #{cnt} in file {file!r}:\n{line!r}'
                 )
                 continue
             key, value = pair
@@ -636,7 +286,7 @@ def _update_from_file(file):
 
             # Add to dictionaries
             try:
-                rc_short, rc_long, rc = _get_synced_params(key, value)
+                rc_short, rc_long, rc = _sync_params(key, value)
             except KeyError:
                 _warn_proplot(
                     f'Invalid key {key!r} on line #{cnt} in file {file!r}.'
@@ -647,7 +297,7 @@ def _update_from_file(file):
                 rcParams.update(rc)
 
 
-def _write_defaults(filename, comment=True, overwrite=False):
+def _write_default_rc_file(filename, comment=True):
     """
     Save a file to the specified path containing the default `rc` settings.
 
@@ -657,15 +307,19 @@ def _write_defaults(filename, comment=True, overwrite=False):
         The path.
     comment : bool, optional
         Whether to "comment out" each setting.
-    overwrite : bool, optional
-        Whether to overwrite existing files.
     """
-    def _tabulate(rcdict):
-        string = ''
+    # Function for tabulating an input dictionary
+    def _tabulate_dict(rcdict, descrip=False):
         prefix = '# ' if comment else ''
-        maxlen = max(map(len, rcdict))
+        suffix = ''
+        string = ''
+        keylen = max(map(len, rcdict.keys()))
         NoneType = type(None)
         for key, value in rcdict.items():
+            if descrip:
+                print(key, value)
+                value, _, suffix, *_ = value
+                suffix = ' # ' + suffix
             if isinstance(value, cycler.Cycler):  # special case!
                 value = repr(value)
             elif isinstance(value, (str, Number, NoneType)):
@@ -680,8 +334,8 @@ def _write_defaults(filename, comment=True, overwrite=False):
                     'Must be string, number, or list or tuple thereof, '
                     'or None or a cycler.'
                 )
-            space = ' ' * (maxlen - len(key) + 1)
-            string += f'{prefix}{key}:{space}{value}\n'
+            spaces = ' ' * (keylen - len(key) + 1)
+            string += f'{prefix}{key}:{spaces}{value}{suffix}\n'
         return string.strip()
 
     # Fill empty defaultParamsLong values with rcDefaultParamsShort
@@ -690,11 +344,11 @@ def _write_defaults(filename, comment=True, overwrite=False):
     # None in a .proplotrc file, may trigger error down the line.
     rc_parents = {
         child: parent
-        for parent, children in _rc_children.items()
+        for parent, (_, _, _, *children) in defaultParamsShort.items()
         for child in children
     }
     defaultParamsLong_filled = defaultParamsLong.copy()
-    for key, value in defaultParamsLong.items():
+    for key, (value, converter, descrip, *_) in defaultParamsLong.items():
         if value is None:
             try:
                 parent = rc_parents[key]
@@ -704,31 +358,117 @@ def _write_defaults(filename, comment=True, overwrite=False):
                     'but has no rcParmsShort parent!'
                 )
             if parent in defaultParamsShort:
-                value = defaultParamsShort[parent]
-            elif parent in defaultParams:
+                value, *_ = defaultParamsShort[parent]
+            elif parent in defaultParams:  # slight speedup maybe?
                 value = defaultParams[parent]
             else:
                 value = rcParams[parent]
-            defaultParamsLong_filled[key] = value
+            defaultParamsLong_filled[key] = (value, converter, descrip)
 
-    with open(filename, 'w') as f:
-        f.write(f"""
+    # Write the result
+    string = f"""
 #---------------------------------------------------------------------
 # Use this file to change the default proplot and matplotlib settings
 # The syntax is mostly the same as for matplotlibrc files
-# For descriptions of each setting see:
+# For details see the proplot and matplotlib docs:
 # https://proplot.readthedocs.io/en/latest/configuration.html
 # https://matplotlib.org/3.1.1/tutorials/introductory/customizing.html
 #---------------------------------------------------------------------
 # ProPlot short name settings
-{_tabulate(defaultParamsShort)}
+{_tabulate_dict(defaultParamsShort, descrip=True)}
 
 # ProPlot long name settings
-{_tabulate(defaultParamsLong_filled)}
+{_tabulate_dict(defaultParamsLong_filled, descrip=True)}
 
 # Matplotlib settings
-{_tabulate(defaultParams)}
-""".strip())
+{_tabulate_dict(defaultParams)}
+""".strip()
+    with open(filename, 'w') as f:
+        f.write(string)
+
+
+def _write_default_rst_table(filename, which='all'):
+    """
+    Write an RST file containing the defaults from the dictionary.
+
+    Parameters
+    ----------
+    filename : str
+        The path.
+    which : {'all', 'short, 'long'}
+        The dictionary to write.
+    """
+    if which == 'all':
+        rcdict = {**defaultParamsShort, **defaultParamsLong}
+    elif which == 'short':
+        rcdict = defaultParamsShort
+    elif which == 'long':
+        rcdict = defaultParamsLong
+    else:
+        raise ValueError(f'Invalid which {which!r}.')
+
+    # Generate the RST table
+    keylen = max(map(len, rcdict.keys()))
+    descriplen = max(map(
+        len,
+        (descrip for _, _, descrip, *_ in rcdict.values())
+    ))
+    string = ''
+    for key, (_, _, descrip, *_) in rcdict.items():
+        spaces = ' ' * (keylen - len(key) - 4 + 1)
+        string += f'``{key}``{spaces}  {descrip}\n'
+
+    # Write the table to input path
+    border = '=' * (keylen + 4) + '  ' + '=' * descriplen
+    header = 'Key' + ' ' * (keylen + 4 - 3) + 'Description'
+    string = '\n'.join((border, header, border, string.strip(), border))
+    with open(filename, 'w') as f:
+        f.write(string)
+
+
+class RcParams(MutableMapping, dict):
+    """A dictionary object with validated assignments."""
+    def __init__(self, default_dict):
+        """
+        Parameters
+        ----------
+        default_dict : dict
+            The dictionary of default values. Each value should be a
+            3-tuple containing the default value, the converter function,
+            and the description.
+        """
+        self.validate = {
+            key: converter
+            for key, (value, converter, descrip, *_) in default_dict.items()
+        }
+        self.update({
+            key: value
+            for key, (value, converter, descrip, *_) in default_dict.items()
+        })
+
+    def __setitem__(self, key, value):
+        """
+        Item assignment with validation.
+        """
+        try:
+            converter = self.validate[key]
+        except KeyError:
+            raise KeyError(
+                f'{key!r} is not a valid rc parameter. '
+                'See rcParams.keys() for a list of valid parameters.'
+            )
+        try:
+            print(key, value, converter)
+            value_converted = converter(value)
+        except ValueError as err:
+            raise ValueError(f'Key {key}: {err}')
+        dict.__setitem__(self, key, value_converted)
+
+    def copy(self):
+        """
+        Return a raw dictionary.
+        """
+        return dict(self)
 
 
 class rc_configurator(object):
@@ -781,7 +521,7 @@ class rc_configurator(object):
         rcParamsShort.update(defaultParamsShort)
         for rcdict in (rcParamsShort, rcParamsLong):
             for key, value in rcdict.items():
-                _, rc_long, rc = _get_synced_params(key, value)
+                _, rc_long, rc = _sync_params(key, value)
                 rcParamsLong.update(rc_long)
                 rcParams.update(rc)
 
@@ -806,7 +546,7 @@ class rc_configurator(object):
                 restore[key] = rcdict[key]
                 rcdict[key] = cache[key] = value
         for key, value in kwargs.items():
-            rc_short, rc_long, rc = _get_synced_params(key, value)
+            rc_short, rc_long, rc = _sync_params(key, value)
             _update(rcParamsShort, rc_short)
             _update(rcParamsLong, rc_long)
             _update(rcParams, rc)
@@ -819,7 +559,7 @@ class rc_configurator(object):
             )
         *_, restore = self._context[-1]
         for key, value in restore.items():
-            rc_short, rc_long, rc = _get_synced_params(key, value)
+            rc_short, rc_long, rc = _sync_params(key, value)
             rcParamsShort.update(rc_short)
             rcParamsLong.update(rc_long)
             rcParams.update(rc)
@@ -867,7 +607,7 @@ class rc_configurator(object):
             return ipython_autosave(value)
         elif key == 'autoreload':
             return ipython_autoreload(value)
-        rc_short, rc_long, rc = _get_synced_params(key, value)
+        rc_short, rc_long, rc = _sync_params(key, value)
         rcParamsShort.update(rc_short)
         rcParamsLong.update(rc_long)
         rcParams.update(rc)
@@ -1264,10 +1004,876 @@ def ipython_autosave(autosave=None):
             pass
 
 
+# Dictionaries containing default settings
+# Optional third entry contains children
+# NOTE: Why not include these in the defaultParams dictionaries? Because
+# if we do that, and implement _sync_params on RcParams, the
+# dictionaries are no longer *isolated* from one another. The configurator
+# plays the role of the "meta" dictionary and more straightforward to keep it
+# that way.
+defaultParamsShort = {
+    'abc': (
+        False,
+        _validate_title_loc,
+        'Boolean. Whether to draw a-b-c labels by default.'
+    ),
+    'align': (
+        False,
+        rcsetup.validate_bool,
+        'Whether to align axis labels during draw. See `aligning labels '
+        '<https://matplotlib.org/3.1.1/gallery/subplots_axes_and_figures/align_labels_demo.html>`__.'  # noqa
+    ),
+    'alpha': (
+        1,
+        rcsetup.validate_float,
+        'The opacity of the background axes patch.',
+        'axes.facealpha',
+        'geoaxes.facealpha',
+    ),
+    'autoreload': (
+        2,
+        rcsetup.validate_int,
+        'If not empty or ``0``, passed to `%autoreload '
+        '<https://ipython.readthedocs.io/en/stable/config/extensions/autoreload.html#magic-autoreload>`__.'  # noqa
+    ),
+    'autosave': (
+        30,
+        rcsetup.validate_int,
+        'If not empty or ``0``, passed to `%autosave '
+        '<https://www.webucator.com/blog/2016/03/change-default-autosave-interval-in-ipython-notebook/>`__.'  # noqa
+    ),
+    'borders': (
+        False,
+        rcsetup.validate_bool,
+        'Boolean. Toggles country border lines on and off.'
+    ),
+    'cmap': (
+        'fire',
+        rcsetup.validate_string,
+        'The default colormap.',
+        'image.cmap',
+    ),
+    'coast': (
+        False,
+        rcsetup.validate_bool,
+        'Boolean. Toggles coastline lines on and off.'
+    ),
+    'color': (
+        'k',
+        rcsetup.validate_color,
+        'The color of axis spines, tick marks, tick labels, and labels.',
+        'axes.edgecolor', 'geoaxes.edgecolor', 'axes.labelcolor',
+        'tick.labelcolor', 'hatch.color', 'xtick.color', 'ytick.color',
+    ),
+    'cycle': (
+        'colorblind',
+        rcsetup.validate_string,
+        'The default color cycle name, used e.g. for lines.'
+    ),
+    'facecolor': (
+        'w',
+        rcsetup.validate_color,
+        'The color of the background axes patch.',
+        'axes.facecolor', 'geoaxes.facecolor',
+    ),
+    'fontname': (
+        'sans-serif',
+        rcsetup.validate_string,
+        'Alias for :rcraw:`font.family`. The default is sans-serif.',
+        'font.family',
+    ),
+    'inlinefmt': (
+        'retina',
+        rcsetup.validate_string,
+        'The inline backend figure format or list thereof. Valid formats '
+        "include ``'svg'``, ``'pdf'``, ``'retina'``, ``'png'``, and ``jpeg``."
+    ),
+    'geogrid': (
+        True,
+        rcsetup.validate_bool,
+        'Boolean. Toggles meridian and parallel gridlines on and off.'
+        'axes.geogrid',
+    ),
+    'grid': (
+        True,
+        rcsetup.validate_bool,
+        'Boolean. Toggles major grid lines on and off.',
+        'axes.grid',
+    ),
+    'gridminor': (
+        False,
+        rcsetup.validate_bool,
+        'Boolean. Toggles minor grid lines on and off.',
+        'axes.gridminor',
+    ),
+    'gridratio': (
+        0.5,
+        rcsetup.validate_float,
+        'Ratio of minor gridline width to major gridline width.',
+    ),
+    'innerborders': (
+        False,
+        rcsetup.validate_bool,
+        'Boolean. Toggles internal border lines on and off. '
+        'e.g. for states and provinces.'
+    ),
+    'labelpad': (
+        3.0,  # copy
+        rcsetup.validate_float,
+        'The *x* and *y* axis label offset. Alias for :rcraw:`axes.titlepad`. '
+        'Units are interpreted by `~proplot.utils.units` (default is points).',
+        'axes.labelpad',
+    ),
+    'lakes': (
+        False,
+        rcsetup.validate_bool,
+        'Boolean. Toggles lake patches on and off.'
+    ),
+    'land': (
+        False,
+        rcsetup.validate_bool,
+        'Boolean. Toggles land patches on and off.'
+    ),
+    'large': (
+        10,
+        rcsetup.validate_float,
+        'Font size for titles, figure titles, and a-b-c subplot labels. '
+        'Units are interpreted by `~proplot.utils.units` (default is points).',
+        'abc.size', 'figure.titlesize',
+        'axes.titlesize', 'suptitle.size', 'title.size',
+        'leftlabel.size', 'toplabel.size',
+        'rightlabel.size', 'bottomlabel.size',
+    ),
+    'linewidth': (
+        0.6,
+        rcsetup.validate_float,
+        'Thickness of axes spines and major tick lines. '
+        'Units are interpreted by `~proplot.utils.units` (default is points).',
+        'axes.linewidth', 'geoaxes.linewidth', 'hatch.linewidth',
+        'xtick.major.width', 'ytick.major.width',
+    ),
+    'lut': (
+        256,
+        rcsetup.validate_int,
+        'The number of colors to put in the colormap lookup table.',
+        'image.lut',
+    ),
+    'margin': (
+        0.0,
+        rcsetup.validate_float,
+        'The margin of space between axes edges and objects plotted '
+        'inside the axes, if ``xlim`` and ``ylim`` are unset.',
+        'axes.xmargin', 'axes.ymargin',
+    ),
+    'matplotlib': (
+        'auto',
+        rcsetup.validate_string,
+        'If not empty, passed to `%matplotlib '
+        '<https://ipython.readthedocs.io/en/stable/interactive/magics.html#magic-matplotlib>`__. ' # noqa
+        "If ``'auto'`` (the default) then ``'inline'`` is used for notebooks "
+        "and ``'qt'`` is used for other ipython sessions."  # noqa
+    ),
+    'ocean': (
+        False,
+        rcsetup.validate_bool,
+        'Boolean. Toggles ocean patches on and off.'
+    ),
+    'reso': (
+        'lo',
+        _validate_reso,
+        'Resolution of geographic features, one of '
+        "``'lo'``, ``'med'``, or ``'hi'``"
+    ),
+    'rgbcycle': (
+        False,
+        rcsetup.validate_bool,
+        'If ``True``, and ``colorblind`` is the current cycle, this registers '
+        "the ``colorblind`` colors as ``'r'``, ``'b'``, ``'g'``, etc., like "
+        'in `seaborn '
+        '<https://seaborn.pydata.org/tutorial/color_palettes.html>`__.'
+    ),
+    'rivers': (
+        False,
+        rcsetup.validate_bool,
+        'Boolean. Toggles river lines on and off.'
+    ),
+    'share': (
+        3,
+        rcsetup.validate_int,
+        'The axis sharing level, one of ``0``, ``1``, ``2``, or ``3``. '
+        'See `~proplot.subplots.subplots` for details.'
+    ),
+    'small': (
+        9,
+        rcsetup.validate_float,
+        'Font size for legend text, tick labels, axis labels, and '
+        'text generated with `~matplotlib.axes.Axes.text`.'
+        'Units are interpreted by `~proplot.utils.units` (default is points).',
+        'font.size', 'tick.labelsize',
+        'xtick.labelsize', 'ytick.labelsize',
+        'axes.labelsize', 'legend.fontsize', 'geogrid.labelsize',
+    ),
+    'span': (
+        True,
+        rcsetup.validate_bool,
+        'Boolean. Toggles spanning axis labels. See '
+        '`~proplot.subplots.subplots` for details.'
+    ),
+    'tickdir': (
+        'out',
+        rcsetup.validate_string,
+        'Major and minor tick direction. '
+        'Must be one of ``out``, ``in``, or ``inout``.',
+        'xtick.direction', 'ytick.direction',
+    ),
+    'ticklen': (
+        4.0,
+        rcsetup.validate_float,
+        'Length of major ticks. '
+        'Units are interpreted by `~proplot.utils.units` (default is points).',
+        'xtick.major.size', 'ytick.major.size',
+    ),
+    'ticklenratio': (
+        0.5,
+        rcsetup.validate_float,
+        'Ratio of minor tickline length to major tickline length.'
+    ),
+    'tickminor': (
+        True,
+        rcsetup.validate_bool,
+        'Padding between ticks and tick labels in points.'
+    ),
+    'tickpad': (
+        2.0,
+        rcsetup.validate_float,
+        'Alias for :rcraw:`axes.titlepad`. '
+        'The padding between the axes and the title. '
+        'Units are interpreted by `~proplot.utils.units` (default is points).',
+        'xtick.major.pad', 'xtick.minor.pad',
+        'ytick.major.pad', 'ytick.minor.pad',
+    ),
+    'tickratio': (
+        0.8,
+        rcsetup.validate_float,
+        'Ratio of minor tickline width to major tickline width.'
+    ),
+    'tight': (
+        True,
+        rcsetup.validate_bool,
+        'Boolean. Indicates whether to auto-adjust figure bounds '
+        'and subplot spacings.'
+    ),
+    'titlepad': (
+        3.0,  # copy
+        rcsetup.validate_float,
+        'The title offset. Alias for :rcraw:`axes.titlepad`. '
+        'Units are interpreted by `~proplot.utils.units` (default is points).',
+        'axes.titlepad',
+    ),
+}
+
+defaultParamsLong = {
+    'abc.border': (
+        True,
+        rcsetup.validate_bool,
+        'Boolean. Indicates whether to draw a white border around '
+        'a-b-c labels with "inner" locations.'
+    ),
+    'abc.color': (
+        'k',
+        rcsetup.validate_color,
+        'a-b-c label color.'
+    ),
+    'abc.linewidth': (
+        1.5,
+        rcsetup.validate_float,
+        'Width of the white border around a-b-c labels.'
+    ),
+    'abc.loc': (
+        'l',
+        _validate_title_loc,
+        'a-b-c label position. For options, see `~proplot.axes.Axes.format`.'
+    ),
+    'abc.size': (
+        None,  # = large
+        rcsetup.validate_fontsize,
+        'a-b-c label font size.'
+    ),
+    'abc.style': (
+        'a',
+        _validate_abcstyle,
+        'a-b-c label style. For options, see `~proplot.axes.Axes.format`.'
+    ),
+    'abc.weight': (
+        'bold',
+        _validate_fontweight,
+        'a-b-c label font weight.'
+    ),
+    'axes.facealpha': (
+        None,  # if empty, depends on 'savefig.transparent'
+        rcsetup.validate_float,
+        'Face transparency for the axes background patch. '
+        'This can be overridden when saving figures by passing '
+        '``transparent=True`` to `~matplotlib.figure.Figure.savefig`.'
+    ),
+    'axes.formatter.timerotation': (
+        90,
+        rcsetup.validate_float,
+        'Float, indicates the default *x* axis tick label rotation for '
+        'datetime tick labels.'
+    ),
+    'axes.formatter.zerotrim': (
+        True,
+        rcsetup.validate_bool,
+        'Boolean. Indicates whether trailing decimal zeros are trimmed '
+        'on tick labels.'
+    ),
+    'axes.geogrid': (
+        True,
+        rcsetup.validate_bool,
+        'Toggles longitude and latitude gridlines. Analogous to '
+        ':rcraw:`axes.geogrid`.'
+    ),
+    'axes.gridminor': (
+        True,
+        rcsetup.validate_bool,
+        'Toggles longitude and latitude gridlines. Analogous to '
+        ':rcraw:`axes.gridminor`.'
+    ),
+    'borders.color': (
+        'k',
+        rcsetup.validate_color,
+        'Line color for country borders.'
+    ),
+    'borders.linewidth': (
+        0.6,
+        rcsetup.validate_float,
+        'Line width for country borders.'
+    ),
+    'bottomlabel.color': (
+        'k',
+        rcsetup.validate_color,
+        'Font color for column labels on the bottom of the figure.'
+    ),
+    'bottomlabel.size': (
+        None,  # = large
+        rcsetup.validate_fontsize,
+        'Font size for column labels on the bottom of the figure.'
+    ),
+    'bottomlabel.weight': (
+        'bold',
+        _validate_fontweight,
+        'Font weight for column labels on the bottom of the figure.'
+    ),
+    'coast.color': (
+        'k',
+        rcsetup.validate_color,
+        'Line color for coast lines.'
+    ),
+    'coast.linewidth': (
+        0.6,
+        rcsetup.validate_float,
+        'Line width for coast lines.'
+    ),
+    'colorbar.extend': (
+        '1.3em',
+        _validate_units,
+        'Length of triangular/rectangular "extensions" for panel colorbars. '
+        'Units are interpreted by `~proplot.utils.units` (default is inches)'
+    ),
+    'colorbar.framealpha': (
+        0.8,
+        rcsetup.validate_float,
+        'Opacity for inset colorbar frames.'
+    ),
+    'colorbar.frameon': (
+        True,
+        rcsetup.validate_bool,
+        'Boolean. Indicates whether to draw a frame behind inset colorbars.'
+    ),
+    'colorbar.grid': (
+        False,
+        rcsetup.validate_bool,
+        'Boolean. Indicates whether to draw borders between '
+        'each level of the colorbar.'
+    ),
+    'colorbar.insetextend': (
+        '1em',
+        _validate_units,
+        'Length of triangular/rectangular "extensions" for inset colorbars. '
+        'Units are interpreted by `~proplot.utils.units` (default is inches)'
+    ),
+    'colorbar.insetlength': (
+        '8em',
+        _validate_units,
+        'Length of inset colorbars. '
+        'Units are interpreted by `~proplot.utils.units` (default is inches)'
+    ),
+    'colorbar.insetpad': (
+        '0.5em',
+        _validate_units,
+        'Padding between axes edge and inset colorbars. '
+        'Units are interpreted by `~proplot.utils.units` (default is inches)'
+    ),
+    'colorbar.insetwidth': (
+        '1.2em',
+        _validate_units,
+        'Width of inset colorbars. '
+        'Units are interpreted by `~proplot.utils.units` (default is inches)'
+    ),
+    'colorbar.length': (
+        1,
+        _validate_units,
+        'Length of outer colorbars.'
+    ),
+    'colorbar.loc': (
+        'right',
+        _validate_colorbar_loc,
+        'Inset colorbar location. '
+        'Options are listed in `~proplot.axes.Axes.colorbar`.'
+    ),
+    'colorbar.width': (
+        '1.5em',
+        _validate_units,
+        'Width of outer colorbars. '
+        'Units are interpreted by `~proplot.utils.units` (default is inches)'
+    ),
+    'geoaxes.edgecolor': (
+        None,  # = color
+        rcsetup.validate_color,
+        'Edge color for the map outline patch.'
+    ),
+    'geoaxes.facealpha': (
+        None,  # = alpha
+        rcsetup.validate_float,
+        'Face transparency for the map background patch.'
+    ),
+    'geoaxes.facecolor': (
+        None,  # = facecolor
+        rcsetup.validate_color,
+        'Face color for the map background patch.'
+    ),
+    'geoaxes.linewidth': (
+        None,  # = linewidth
+        rcsetup.validate_float,
+        'Edge width for the map outline patch.'
+    ),
+    'geogrid.alpha': (
+        0.5,
+        rcsetup.validate_float,
+        'Latitude longitude gridline transparency.'
+    ),
+    'geogrid.color': (
+        'k',
+        rcsetup.validate_color,
+        'Latitude longitude gridline color.'
+    ),
+    'geogrid.labels': (
+        False,
+        rcsetup.validate_bool,
+        'Boolean. Indicates whether to label the latitude and longitude '
+        'gridlines.'
+    ),
+    'geogrid.labelsize': (
+        None,  # = small
+        rcsetup.validate_fontsize,
+        'Font size for latitude and longitude gridline labels. '
+        'Inherits from ``small``.'
+    ),
+    'geogrid.latmax': (
+        90,
+        rcsetup.validate_float,
+        'Absolute latitude in degrees, poleward of which longitude gridlines '
+        'are cut off.'
+    ),
+    'geogrid.latstep': (
+        20,
+        rcsetup.validate_float,
+        'Default interval for latitude gridlines in degrees.'
+    ),
+    'geogrid.linestyle': (
+        ':',
+        rcsetup._validate_linestyle,
+        'Latitude longitude gridline style.'
+    ),
+    'geogrid.linewidth': (
+        1.0,
+        rcsetup.validate_float,
+        'Latitude longitude gridline width.'
+    ),
+    'geogrid.lonstep': (
+        30,
+        rcsetup.validate_float,
+        'Default interval for longitude gridlines in degrees.'
+    ),
+    'gridminor.alpha': (
+        0.1,
+        rcsetup.validate_float,
+        'Minor gridline transparency.'
+    ),
+    'gridminor.color': (
+        'k',
+        rcsetup.validate_color,
+        'Minor gridline color.'
+    ),
+    'gridminor.linestyle': (
+        '-',
+        rcsetup._validate_linestyle,
+        'Minor gridline style.'
+    ),
+    'gridminor.linewidth': (
+        0.3,  # = grid.linewidth x gridratio
+        rcsetup.validate_float,
+        'Minor gridline width.'
+    ),
+    'image.edgefix': (
+        True,
+        rcsetup.validate_bool,
+        'Whether to fix the `white-lines-between-filled-contours '
+        '<https://stackoverflow.com/q/8263769/4970632>`__ and '
+        '`white-lines-between-pcolor-rectangles '
+        '<https://stackoverflow.com/q/27092991/4970632>`__ issues. '
+        'This slows down figure rendering a bit.'
+    ),
+    'image.levels': (
+        11,
+        rcsetup.validate_int,
+        'Default number of levels for ``pcolormesh`` and ``contourf`` plots.'
+    ),
+    'innerborders.color': (
+        'k',
+        rcsetup.validate_color,
+        'Line color for internal border lines.'
+    ),
+    'innerborders.linewidth': (
+        0.6,
+        rcsetup.validate_float,
+        'Line width for internal border lines.'
+    ),
+    'lakes.color': (
+        'w',
+        rcsetup.validate_color,
+        'Face color for land patches.'
+    ),
+    'land.color': (
+        'k',
+        rcsetup.validate_color,
+        'Face color for lake patches.'
+    ),
+    'leftlabel.color': (
+        'k',
+        rcsetup.validate_color,
+        'Font color for row labels on the left-hand side.'
+    ),
+    'leftlabel.size': (
+        None,  # = large
+        rcsetup.validate_fontsize,
+        'Font size for row labels on the left-hand side.'
+    ),
+    'leftlabel.weight': (
+        'bold',
+        _validate_fontweight,
+        'Font weight for row labels on the left-hand side.'
+    ),
+    'ocean.color': (
+        'w',
+        rcsetup.validate_color,
+        'Face color for ocean patches.'
+    ),
+    'rightlabel.color': (
+        'k',
+        rcsetup.validate_color,
+        'Font color for row labels on the right-hand side.'
+    ),
+    'rightlabel.size': (
+        None,  # = large
+        rcsetup.validate_fontsize,
+        'Font size for row labels on the right-hand side.'
+    ),
+    'rightlabel.weight': (
+        'bold',
+        _validate_fontweight,
+        'Font weight for row labels on the right-hand side.'
+    ),
+    'rivers.color': (
+        'k',
+        rcsetup.validate_color,
+        'Line color for river lines.'
+    ),
+    'rivers.linewidth': (
+        0.6,
+        rcsetup.validate_float,
+        'Line width for river lines.'
+    ),
+    'subplots.axpad': (
+        '1em',
+        _validate_units,
+        'Padding between adjacent subplots. '
+        'Units are interpreted by `~proplot.utils.units` (default is inches)'
+    ),
+    'subplots.axwidth': (
+        '18em',
+        _validate_units,
+        'Default width of each axes. '
+        'Units are interpreted by `~proplot.utils.units` (default is inches)'
+    ),
+    'subplots.pad': (
+        '0.5em',
+        _validate_units,
+        'Padding around figure edge. '
+        'Units are interpreted by `~proplot.utils.units` (default is inches)'
+    ),
+    'subplots.panelpad': (
+        '0.5em',
+        _validate_units,
+        'Padding between subplots and panels, and between stacked panels. '
+        'Units are interpreted by `~proplot.utils.units` (default is inches)'
+    ),
+    'subplots.panelwidth': (
+        '4em',
+        _validate_units,
+        'Width of side panels. '
+        'Units are interpreted by `~proplot.utils.units` (default is inches).'
+    ),
+    'suptitle.color': (
+        'k',
+        rcsetup.validate_color,
+        'Figure title color.'
+    ),
+    'suptitle.size': (
+        None,  # = large
+        rcsetup.validate_fontsize,
+        'Figure title font size.'
+    ),
+    'suptitle.weight': (
+        'bold',
+        _validate_fontweight,
+        'Figure title font weight.'
+    ),
+    'tick.labelcolor': (
+        None,  # = color
+        rcsetup.validate_color,
+        'Axis tick label color. '
+        'Mirrors the *axis* label :rcraw:`axes.labelcolor` setting.'
+    ),
+    'tick.labelsize': (
+        None,  # = small
+        rcsetup.validate_fontsize,
+        'Axis tick label font size. '
+        'Mirrors the *axis* label :rcraw:`axes.labelsize` setting.'
+    ),
+    'tick.labelweight': (
+        'normal',
+        _validate_fontweight,
+        'Axis tick label font weight. '
+        'Mirrors the *axis* label :rcraw:`axes.labelweight` setting.'
+    ),
+    'title.border': (
+        True,
+        rcsetup.validate_bool,
+        'Boolean. Indicates whether to draw a white border around titles '
+        'with "inner" locations.'
+    ),
+    'title.color': (
+        'k',
+        rcsetup.validate_color,
+        'Axes title color.'
+    ),
+    'title.linewidth': (
+        1.5,
+        rcsetup.validate_float,
+        'Width of the white border around titles.'
+    ),
+    'title.loc': (
+        'c',
+        _validate_title_loc,
+        'Title position. For options, see `~proplot.axes.Axes.format`.'
+    ),
+    'title.size': (
+        None,  # = large
+        rcsetup.validate_fontsize,
+        'Axes title font size.'
+    ),
+    'title.weight': (
+        'normal',
+        _validate_fontweight,
+        'Axes title font weight.'
+    ),
+    'toplabel.color': (
+        'k',
+        rcsetup.validate_color,
+        'Font color for column labels on the top of the figure.'
+    ),
+    'toplabel.size': (
+        None,  # = large
+        rcsetup.validate_fontsize,
+        'Font size for column labels on the top of the figure.'
+    ),
+    'toplabel.weight': (
+        'bold',
+        _validate_fontweight,
+        'Font weight for column labels on the top of the figure.'
+    ),
+}
+
+defaultParams = {
+    'axes.grid': True,
+    'axes.labelpad': 3.0,
+    'axes.titlepad': 3.0,
+    'axes.titleweight': 'normal',
+    'axes.xmargin': 0.0,
+    'axes.ymargin': 0.0,
+    'figure.autolayout': False,
+    'figure.facecolor': '#f2f2f2',
+    'figure.max_open_warning': 0,
+    'figure.titleweight': 'bold',
+    'font.serif': (
+        'TeX Gyre Schola',  # Century lookalike
+        'TeX Gyre Bonum',  # Bookman lookalike
+        'TeX Gyre Termes',  # Times New Roman lookalike
+        'TeX Gyre Pagella',  # Palatino lookalike
+        'DejaVu Serif',
+        'Bitstream Vera Serif',
+        'Computer Modern Roman',
+        'Bookman',
+        'Century Schoolbook L',
+        'Charter',
+        'ITC Bookman',
+        'New Century Schoolbook',
+        'Nimbus Roman No9 L',
+        'Palatino',
+        'Times New Roman',
+        'Times',
+        'Utopia',
+        'serif'
+    ),
+    'font.sans-serif': (
+        'TeX Gyre Heros',  # Helvetica lookalike
+        'DejaVu Sans',
+        'Bitstream Vera Sans',
+        'Computer Modern Sans Serif',
+        'Arial',
+        'Avenir',
+        'Fira Math',
+        'Frutiger',
+        'Geneva',
+        'Gill Sans',
+        'Helvetica',
+        'Lucid',
+        'Lucida Grande',
+        'Myriad Pro',
+        'Noto Sans',
+        'Roboto',
+        'Source Sans Pro',
+        'Tahoma',
+        'Trebuchet MS',
+        'Ubuntu',
+        'Univers',
+        'Verdana',
+        'sans-serif'
+    ),
+    'font.monospace': (
+        'TeX Gyre Cursor',  # Courier lookalike
+        'DejaVu Sans Mono',
+        'Bitstream Vera Sans Mono',
+        'Computer Modern Typewriter',
+        'Andale Mono',
+        'Courier New',
+        'Courier',
+        'Fixed',
+        'Nimbus Mono L',
+        'Terminal',
+        'monospace'
+    ),
+    'font.cursive': (
+        'TeX Gyre Chorus',  # Chancery lookalike
+        'Apple Chancery',
+        'Felipa',
+        'Sand',
+        'Script MT',
+        'Textile',
+        'Zapf Chancery',
+        'cursive'
+    ),
+    'font.fantasy': (
+        'TeX Gyre Adventor',  # Avant Garde lookalike
+        'Avant Garde',
+        'Charcoal',
+        'Chicago',
+        'Comic Sans MS',
+        'Futura',
+        'Humor Sans',
+        'Impact',
+        'Optima',
+        'Western',
+        'xkcd',
+        'fantasy'
+    ),
+    'grid.alpha': 0.1,
+    'grid.color': 'k',
+    'grid.linestyle': '-',
+    'grid.linewidth': 0.6,
+    'hatch.color': 'k',
+    'hatch.linewidth': 0.6,
+    'legend.borderaxespad': 0,
+    'legend.borderpad': 0.5,
+    'legend.columnspacing': 1.0,
+    'legend.fancybox': False,
+    'legend.framealpha': 0.8,
+    'legend.frameon': True,
+    'legend.handlelength': 1.5,
+    'legend.handletextpad': 0.5,
+    'legend.labelspacing': 0.5,
+    'lines.linewidth': 1.3,
+    'lines.markersize': 3.0,
+    'mathtext.fontset': 'custom',
+    'mathtext.default': 'regular',
+    'savefig.bbox': 'standard',
+    'savefig.directory': '',
+    'savefig.dpi': 300,
+    'savefig.facecolor': 'white',
+    'savefig.format': 'pdf',
+    'savefig.pad_inches': 0.0,
+    'savefig.transparent': True,
+    'text.usetex': False,
+    'xtick.minor.visible': True,
+    'ytick.minor.visible': True,
+}
+
+# Mapping of settings without "dots" to their full names. This lets us pass
+# all settings as kwargs, e.g. ax.format(landcolor='b') instead of the much
+# more verbose ax.format(rc_kw={'land.color':'b'}).
+# WARNING: rcParamsShort has to be in here because Axes.format() only checks
+# _rc_nodots to filter out the rc kwargs!
+_rc_nodots = {
+    name.replace('.', ''): name
+    for names in (defaultParamsShort, defaultParamsLong, rcParams)
+    for name in names.keys()
+}
+
+# Category names, used for returning dicts of subcategory properties
+_rc_categories = {
+    *(
+        re.sub(r'\.[^.]*$', '', name)
+        for names in (defaultParamsLong, rcParams)
+        for name in names.keys()
+    ),
+    *(
+        re.sub(r'\..*$', '', name)
+        for names in (defaultParamsLong, rcParams)
+        for name in names.keys()
+    )
+}
+
+
 # Write defaults
 _user_rc_file = os.path.join(os.path.expanduser('~'), '.proplotrc')
 if not os.path.exists(_user_rc_file):
-    _write_defaults(_user_rc_file)
+    _write_default_rc_file(_user_rc_file)
+
+# Dictionaries used to track custom proplot settings
+rcParamsShort = RcParams(defaultParamsShort)
+rcParamsLong = RcParams(defaultParamsLong)
 
 #: Instance of `rc_configurator`. This is used to change global settings.
 #: See :ref:`Configuring proplot` for details.

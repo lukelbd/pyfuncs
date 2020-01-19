@@ -4,9 +4,10 @@
 # the fontManager is loaded by other modules (requiring a rebuild)
 import os as _os
 import pkg_resources as _pkg
-from .utils import _benchmark
-from .utils import *  # noqa: F401 F403
+from .cbook import _benchmark
 with _benchmark('total time'):
+    with _benchmark('utils'):
+        from .utils import *  # noqa: F401 F403
     with _benchmark('styletools'):
         from .styletools import *  # noqa: F401 F403
     with _benchmark('rctools'):

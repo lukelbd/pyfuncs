@@ -8,8 +8,10 @@ import sys
 import numpy as np
 import numpy.ma as ma
 import functools
-from . import styletools, axistools
-from .utils import _warn_proplot, _notNone, edges, edges2d, units
+from . import axistools, styletools, utils
+from .cbook import (
+    _notNone, _warn_proplot, _validate_colorbar_loc, _validate_legend_loc,
+)
 import matplotlib.axes as maxes
 import matplotlib.contour as mcontour
 import matplotlib.ticker as mticker
@@ -522,15 +524,15 @@ def standardize_2d(self, func, *args, order='C', globe=False, **kwargs):
             elif Z.shape[1] == xlen and Z.shape[0] == ylen:
                 if all(z.ndim == 1 and z.size > 1
                        and z.dtype != 'object' for z in (x, y)):
-                    x = edges(x)
-                    y = edges(y)
+                    x = utils.edges(x)
+                    y = utils.edges(y)
                 else:
                     if (x.ndim == 2 and x.shape[0] > 1 and x.shape[1] > 1
                             and x.dtype != 'object'):
-                        x = edges2d(x)
+                        x = utils.edges2d(x)
                     if (y.ndim == 2 and y.shape[0] > 1 and y.shape[1] > 1
                             and y.dtype != 'object'):
-                        y = edges2d(y)
+                        y = utils.edges2d(y)
             elif Z.shape[1] != xlen - 1 or Z.shape[0] != ylen - 1:
                 raise ValueError(
                     f'Input shapes x {x.shape} and y {y.shape} must match '
@@ -1376,8 +1378,10 @@ def text_wrapper(
 
     # More flexible keyword args and more helpful warning if invalid font
     # is specified
-    fontname = _notNone(fontfamily, fontname, None,
-                        names=('fontfamily', 'fontname'))
+    fontname = _notNone(
+        fontfamily, fontname, None,
+        names=('fontfamily', 'fontname')
+    )
     if fontname is not None:
         if not isinstance(fontname, str) and np.iterable(
                 fontname) and len(fontname) == 1:
@@ -1391,7 +1395,7 @@ def text_wrapper(
             )
     size = _notNone(fontsize, size, None, names=('fontsize', 'size'))
     if size is not None:
-        kwargs['fontsize'] = units(size, 'pt')
+        kwargs['fontsize'] = utils.units(size, 'pt')
     # text.color is ignored sometimes unless we apply this
     kwargs.setdefault('color', rc['text.color'])
     obj = func(self, x, y, text, transform=transform, **kwargs)
@@ -1407,8 +1411,9 @@ def text_wrapper(
         obj.update({
             'color': facecolor,
             'zorder': 100,
-            'path_effects':
-                [mpatheffects.Stroke(**kwargs), mpatheffects.Normal()]
+            'path_effects': [
+                mpatheffects.Stroke(**kwargs), mpatheffects.Normal()
+            ]
         })
     return obj
 
@@ -1649,12 +1654,7 @@ def cycle_changer(
     # Add colorbar and/or legend
     if colorbar:
         # Add handles
-        loc = self._loc_translate(colorbar)
-        if not isinstance(loc, str):
-            raise ValueError(
-                f'Invalid on-the-fly location {loc!r}. '
-                'Must be a preset location. See Axes.colorbar'
-            )
+        loc = _validate_colorbar_loc(colorbar, default=rc['colorbar.loc'])
         if loc not in self._auto_colorbar:
             self._auto_colorbar[loc] = ([], {})
         self._auto_colorbar[loc][0].extend(objs)
@@ -1666,12 +1666,7 @@ def cycle_changer(
         self._auto_colorbar[loc][1].update(colorbar_kw)
     if legend:
         # Add handles
-        loc = self._loc_translate(legend)
-        if not isinstance(loc, str):
-            raise ValueError(
-                f'Invalid on-the-fly location {loc!r}. '
-                'Must be a preset location. See Axes.legend'
-            )
+        loc = _validate_legend_loc(legend, default=rc['legend.loc'])
         if loc not in self._auto_legend:
             self._auto_legend[loc] = ([], {})
         self._auto_legend[loc][0].extend(objs)
@@ -1912,12 +1907,12 @@ def cmap_changer(
                 for i, val in enumerate(values):
                     levels.append(2 * val - levels[-1])
                 if any(np.diff(levels) <= 0):  # algorithm failed
-                    levels = edges(values)
+                    levels = utils.edges(values)
             # Generate levels by finding in-between points in the
             # normalized numeric space
             else:
                 inorm = styletools.Norm(norm, **norm_kw)
-                levels = inorm.inverse(edges(inorm(values)))
+                levels = inorm.inverse(utils.edges(inorm(values)))
             if name in ('parametric',):
                 kwargs['values'] = values
         else:
@@ -2143,12 +2138,7 @@ def cmap_changer(
 
     # Add colorbar
     if colorbar:
-        loc = self._loc_translate(colorbar)
-        if not isinstance(loc, str):
-            raise ValueError(
-                f'Invalid on-the-fly location {loc!r}. '
-                f'Must be a preset location. See Axes.colorbar.'
-            )
+        loc = _validate_colorbar_loc(colorbar, default=rc['colorbar.loc'])
         if 'label' not in colorbar_kw and self.figure._auto_format:
             _, label = _auto_label(args[-1])  # last one is data, we assume
             if label:
@@ -2856,7 +2846,7 @@ or colormap-spec
         scale = width * abs(self.get_position().width)
     else:
         scale = height * abs(self.get_position().height)
-    extendsize = units(_notNone(extendsize, rc['colorbar.extend']))
+    extendsize = utils.units(_notNone(extendsize, rc['colorbar.extend']))
     extendsize = extendsize / (scale - 2 * extendsize)
     kwargs.update({
         'ticks': locator,

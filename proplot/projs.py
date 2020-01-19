@@ -4,7 +4,7 @@ New cartopy projection classes and a projection constructor function
 for generating `~mpl_toolkits.basemap.Basemap` and cartopy
 `~cartopy.crs.Projection` classes.
 """
-from .utils import _warn_proplot
+from .cbook import _warn_proplot
 try:  # use this for debugging instead of print()!
     from icecream import ic
 except ImportError:  # graceful fallback if IceCream isn't installed

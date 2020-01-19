@@ -1,10 +1,10 @@
 from docutils import nodes
 from os.path import sep
-from proplot import rc
+from proplot.rctools import rc, rcParamsShort, rcParamsLong
 
 
 def get_nodes(rawtext, text, inliner):
-    rctext = (f"rc['{text}']" if '.' in text else f'rc.{text}')
+    rctext = f"rc['{text}']" if '.' in text else f'rc.{text}'
     rendered = nodes.Text(rctext)
     source = inliner.document.attributes['source'].replace(sep, '/')
     relsource = source.split('/docs/', 1)
@@ -13,7 +13,7 @@ def get_nodes(rawtext, text, inliner):
     levels = relsource[1].count('/')  # distance to 'docs' folder
     refuri = (
         '../' * levels
-        + f'en/latest/configuration.html?highlight={text}#'
+        + f'configuration.html?highlight={text}#'
         + ('rcparamslong' if '.' in text else 'rcparamsshort')
     )
     ref = nodes.reference(rawtext, rendered, refuri=refuri)

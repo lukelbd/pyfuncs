@@ -5,7 +5,7 @@ classes. Includes constructor functions so that these classes can be selected
 with a shorthand syntax.
 """
 import re
-from .utils import _warn_proplot, _notNone
+from .cbook import _notNone, _warn_proplot
 from .rctools import rc
 from numbers import Number
 from fractions import Fraction

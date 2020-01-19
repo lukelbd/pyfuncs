@@ -4,7 +4,7 @@ The axes classes used for all ProPlot figures.
 """
 import numpy as np
 import functools
-from numbers import Integral, Number
+from numbers import Integral
 import matplotlib.projections as mproj
 import matplotlib.axes as maxes
 import matplotlib.dates as mdates
@@ -15,8 +15,14 @@ import matplotlib.patches as mpatches
 import matplotlib.gridspec as mgridspec
 import matplotlib.transforms as mtransforms
 import matplotlib.collections as mcollections
-from . import projs, axistools
-from .utils import _warn_proplot, _notNone, units, arange, edges
+from . import axistools, projs, utils, validators
+from .cbook import (
+    _notNone,
+    _warn_proplot,
+    _validate_title_loc,
+    _validate_legend_loc,
+    _validate_colorbar_loc
+)
 from .rctools import rc, _rc_nodots
 from .wrappers import (
     _get_transform, _norecurse, _redirect,
@@ -47,38 +53,11 @@ __all__ = [
 
 # Translator for inset colorbars and legends
 ABC_STRING = 'abcdefghijklmnopqrstuvwxyz'
-SIDE_TRANSLATE = {
+SIDES_MAP = {
     'l': 'left',
     'r': 'right',
     'b': 'bottom',
     't': 'top',
-}
-LOC_TRANSLATE = {
-    'inset': 'best',
-    'i': 'best',
-    0: 'best',
-    1: 'upper right',
-    2: 'upper left',
-    3: 'lower left',
-    4: 'lower right',
-    5: 'center left',
-    6: 'center right',
-    7: 'lower center',
-    8: 'upper center',
-    9: 'center',
-    'l': 'left',
-    'r': 'right',
-    'b': 'bottom',
-    't': 'top',
-    'c': 'center',
-    'ur': 'upper right',
-    'ul': 'upper left',
-    'll': 'lower left',
-    'lr': 'lower right',
-    'cr': 'center right',
-    'cl': 'center left',
-    'uc': 'upper center',
-    'lc': 'lower center',
 }
 
 
@@ -148,7 +127,7 @@ class Axes(maxes.Axes):
         # Properties
         self._abc_loc = None
         self._abc_text = None
-        self._titles_dict = {}  # dictionary of titles and locs
+        self._abc_titles_dict = {}  # dictionary of titles and locs
         self._title_loc = None  # location of main title
         self._title_pad = rc['axes.titlepad']  # format() can overwrite
         self._title_above_panel = True  # TODO: add rc prop?
@@ -239,36 +218,31 @@ class Axes(maxes.Axes):
         """Return the standardized location name, position keyword arguments,
         and setting keyword arguments for the relevant title or a-b-c label at
         location `loc`."""
-        # Location string and position coordinates
-        context = True
+        # Compare against previous location
+        # NOTE: We need to respect context() here -- only "apply" the location
+        # on first run, or if changed by the user during format() call. Thus
+        # since the "default" can be None, need to pass sentinel to validator.
+        sentinel = object()  # prevent validator raising error
         prefix = 'abc' if abc else 'title'
-        loc = _notNone(loc, rc.get(f'{prefix}.loc', context=True))
-        loc_prev = getattr(
-            self, '_' + ('abc' if abc else 'title')
-            + '_loc')  # old
-        if loc is None:
-            loc = loc_prev
-        elif loc_prev is not None and loc != loc_prev:
-            context = False
-        try:
-            loc = self._loc_translate(loc)
-        except KeyError:
-            raise ValueError(f'Invalid title or abc loc {loc!r}.')
-        else:
-            if loc in ('top', 'bottom', 'best') or not isinstance(loc, str):
-                raise ValueError(f'Invalid title or abc loc {loc!r}.')
+        loc = _validate_title_loc(loc, default=sentinel)
+        if loc is sentinel:
+            loc = rc.get(prefix + '.loc', context=True)
+        prevloc = getattr(self, '_' + ('abc' if abc else 'title') + '_loc')
+        context = loc is None or prevloc is None or loc == prevloc
 
-        # Existing object
-        if loc in ('left', 'right', 'center'):
-            if loc == 'center':
-                obj = self.title
-            else:
-                obj = getattr(self, '_' + loc + '_title')
-        elif loc in self._titles_dict:
-            obj = self._titles_dict[loc]
+        # Existing builtin or custom location
+        loc = loc or prevloc
+        if loc == 'center':
+            obj = self.title
+        elif loc in ('left', 'right'):
+            obj = getattr(self, '_' + loc + '_title')
+        elif loc in self._abc_titles_dict:
+            obj = self._abc_titles_dict[loc]
+
         # New object
+        # NOTE: Should always have context=False if we get here, because if loc
+        # was passed and is same as previous, will be in _abc_titles_dict
         else:
-            context = False
             width, height = self.get_size_inches()
             if loc in ('upper center', 'lower center'):
                 x, ha = 0.5, 'center'
@@ -278,16 +252,16 @@ class Axes(maxes.Axes):
             elif loc in ('upper right', 'lower right'):
                 xpad = rc['axes.titlepad'] / (72 * width)
                 x, ha = 1 - 1.5 * xpad, 'right'
-            else:
-                raise RuntimeError  # should be impossible
+            else:  # should never happen
+                raise ValueError(f'Unknown location {loc!r}.')
             if loc in ('upper left', 'upper right', 'upper center'):
                 ypad = rc['axes.titlepad'] / (72 * height)
                 y, va = 1 - 1.5 * ypad, 'top'
             elif loc in ('lower left', 'lower right', 'lower center'):
                 ypad = rc['axes.titlepad'] / (72 * height)
                 y, va = 1.5 * ypad, 'bottom'
-            else:
-                raise RuntimeError  # should be impossible
+            else:  # should never happen
+                raise ValueError(f'Unknown location {loc!r}.')
             obj = self.text(x, y, '', ha=ha, va=va, transform=self.transAxes)
             obj.set_transform(self.transAxes)
 
@@ -319,27 +293,6 @@ class Axes(maxes.Axes):
                     continue
                 axs.append(ax)
         return axs
-
-    @staticmethod
-    def _loc_translate(loc, default=None):
-        """Return the location string `loc` translated into a standardized
-        form."""
-        if loc in (None, True):
-            loc = default
-        elif isinstance(loc, (str, Integral)):
-            if loc in LOC_TRANSLATE.values():  # full name
-                pass
-            else:
-                try:
-                    loc = LOC_TRANSLATE[loc]
-                except KeyError:
-                    raise KeyError(f'Invalid location {loc!r}.')
-        elif np.iterable(loc) and len(loc) == 2 and all(
-                isinstance(l, Number) for l in loc):
-            loc = np.array(loc)
-        else:
-            raise KeyError(f'Invalid location {loc!r}.')
-        return loc
 
     def _make_inset_locator(self, bounds, trans):
         """Return a locator that determines inset axes bounds."""
@@ -383,8 +336,9 @@ class Axes(maxes.Axes):
         # Place column and row labels on panels instead of axes -- works when
         # this is called on the main axes *or* on the relevant panel itself
         # TODO: Mixed figure panels with super labels? How does that work?
+        # TODO: Simplify this when EdgeStack implemented
         s = side[0]
-        side = SIDE_TRANSLATE[s]
+        side = SIDES_MAP[s]
         if s == self._panel_side:
             ax = self._panel_parent
         else:
@@ -415,6 +369,7 @@ class Axes(maxes.Axes):
         # called on the main axes *or* on the top panel itself. This is
         # critical for bounding box calcs; not always clear whether draw() and
         # get_tightbbox() are called on the main axes or panel first
+        # TODO: Simplify this when EdgeStack implemented
         if self._panel_side == 'top' and self._panel_parent:
             ax, taxs = self._panel_parent, [self]
         else:
@@ -424,16 +379,17 @@ class Axes(maxes.Axes):
         else:
             tax = taxs[0]
             tax._title_pad = ax._title_pad
-            for loc, obj in ax._titles_dict.items():
+            for loc, obj in ax._abc_titles_dict.items():
                 if not obj.get_text() or loc not in (
-                        'left', 'center', 'right'):
+                    'left', 'center', 'right'
+                ):
                     continue
                 kw = {}
                 loc, tobj, _ = tax._get_title_props(loc=loc)
                 for key in ('text', 'color', 'fontproperties'):  # add to this?
                     kw[key] = getattr(obj, 'get_' + key)()
                 tobj.update(kw)
-                tax._titles_dict[loc] = tobj
+                tax._abc_titles_dict[loc] = tobj
                 obj.set_text('')
 
         # Push title above tick marks -- this is known matplotlib problem,
@@ -665,7 +621,7 @@ class Axes(maxes.Axes):
         ltitle, rtitle, ultitle, uctitle, urtitle, lltitle, lctitle, lrtitle \
 : str, optional
             Axes titles in particular positions. This lets you specify multiple
-            "titles" for each subplots. See the `abcloc` keyword.
+            "titles" in each subplot. See the `abcloc` keyword.
         top : bool, optional
             Whether to try to put title and a-b-c label above the top subplot
             panel (if it exists), or to always put them on the main subplot.
@@ -765,9 +721,10 @@ optional
                 fig._update_labels(self, side, labels, **kw)
 
         # A-b-c labels
-        titles_dict = self._titles_dict
+        titles_dict = self._abc_titles_dict
         if not self._panel_side:
             # Location and text
+            # NOTE: abcstyle already validated
             abcstyle = rc.get('abc.style', context=True)  # 1st run, or changed
             if 'abcformat' in kwargs:  # super sophisticated deprecation system
                 abcstyle = kwargs.pop('abcformat')
@@ -776,12 +733,6 @@ optional
                     f'Please use "abcstyle".'
                 )
             if abcstyle and self.number is not None:
-                if not isinstance(abcstyle, str) or (
-                        abcstyle.count('a') != 1 and abcstyle.count('A') != 1):
-                    raise ValueError(
-                        f'Invalid abcstyle {abcstyle!r}. '
-                        'Must include letter "a" or "A".'
-                    )
                 abcedges = abcstyle.split('a' if 'a' in abcstyle else 'A')
                 text = abcedges[0] + _abc(self.number - 1) + abcedges[-1]
                 if 'A' in abcstyle:
@@ -925,11 +876,7 @@ optional
         # TODO: add option to pad inset away from axes edge!
         kwargs.update({'edgecolor': edgecolor, 'linewidth': linewidth})
         if loc != '_fill':
-            loc = self._loc_translate(loc, rc['colorbar.loc'])
-        if not isinstance(loc, str):  # e.g. 2-tuple or ndarray
-            raise ValueError(f'Invalid colorbar location {loc!r}.')
-        if loc == 'best':  # white lie
-            loc = 'lower right'
+            loc = _validate_colorbar_loc(loc, default=rc['colorbar.loc'])
 
         # Generate panel
         if loc in ('left', 'right', 'top', 'bottom'):
@@ -1022,16 +969,16 @@ optional
             # Default props
             cbwidth, cblength = width, length
             width, height = self.get_size_inches()
-            extend = units(_notNone(
+            extend = utils.units(_notNone(
                 kwargs.get('extendsize', None), rc['colorbar.insetextend']
             ))
-            cbwidth = units(_notNone(
+            cbwidth = utils.units(_notNone(
                 cbwidth, rc['colorbar.insetwidth']
             )) / height
-            cblength = units(_notNone(
+            cblength = utils.units(_notNone(
                 cblength, rc['colorbar.insetlength']
             )) / width
-            pad = units(_notNone(pad, rc['colorbar.insetpad']))
+            pad = utils.units(_notNone(pad, rc['colorbar.insetpad']))
             xpad, ypad = pad / width, pad / height
 
             # Get location in axes-relative coordinates
@@ -1158,7 +1105,7 @@ optional
             Passed to `~proplot.wrappers.legend_wrapper`.
         """
         if loc != '_fill':
-            loc = self._loc_translate(loc, rc['legend.loc'])
+            loc = _validate_legend_loc(loc, default=rc['legend.loc'])
         if isinstance(loc, np.ndarray):
             loc = loc.tolist()
 
@@ -1447,8 +1394,10 @@ optional
         if len(args) not in (1, 2):
             raise ValueError(f'Requires 1-2 arguments, got {len(args)}.')
         y = np.array(args[-1]).squeeze()
-        x = np.arange(
-            y.shape[-1]) if len(args) == 1 else np.array(args[0]).squeeze()
+        x = (
+            np.arange(y.shape[-1]) if len(args) == 1
+            else np.array(args[0]).squeeze()
+        )
         values = np.array(values).squeeze()
         if x.ndim != 1 or y.ndim != 1 or values.ndim != 1:
             raise ValueError(
@@ -1479,7 +1428,7 @@ optional
                     vorig[j], vorig[j + 1], interp + 2)[idx].flat)
             x, y, values = np.array(x), np.array(y), np.array(values)
         coords = []
-        levels = edges(values)
+        levels = utils.edges(values)
         for j in range(y.shape[0]):
             # Get x/y coordinates and values for points to the 'left' and
             # 'right' of each joint
@@ -2403,7 +2352,7 @@ class XYAxes(Axes):
                     else:
                         kw_ticks.pop('visible', None)  # invalid setting
                     if ticklen is not None:
-                        kw_ticks['size'] = units(ticklen, 'pt')
+                        kw_ticks['size'] = utils.units(ticklen, 'pt')
                         if which == 'minor':
                             kw_ticks['size'] *= rc['ticklenratio']
                     # Grid style and toggling
@@ -3135,7 +3084,9 @@ optional
                     self.projection.lonmin / base) + 180  # central longitude
             if lonlines is not None:
                 if not np.iterable(lonlines):
-                    lonlines = arange(lon_0 - 180, lon_0 + 180, lonlines)
+                    lonlines = utils.arange(
+                        lon_0 - 180, lon_0 + 180, lonlines
+                    )
                     lonlines = lonlines.astype(np.float64)
                     lonlines[-1] -= 1e-10  # make sure appears on *right*
                 lonlines = [*lonlines]
@@ -3156,9 +3107,9 @@ optional
                 # Get tick locations
                 if not np.iterable(latlines):
                     if (ilatmax % latlines) == (-ilatmax % latlines):
-                        latlines = arange(-ilatmax, ilatmax, latlines)
+                        latlines = utils.arange(-ilatmax, ilatmax, latlines)
                     else:
-                        latlines = arange(0, ilatmax, latlines)
+                        latlines = utils.arange(0, ilatmax, latlines)
                         if latlines[-1] != ilatmax:
                             latlines = np.concatenate((latlines, [ilatmax]))
                         latlines = np.concatenate(
@@ -3487,14 +3438,11 @@ class GeoAxes(ProjAxes, GeoAxes):
         # NOTE: The e.g. cfeature.COASTLINE features are just for convenience,
         # hi res versions. Use cfeature.COASTLINE.name to see how it can be
         # looked up with NaturalEarthFeature.
-        reso = rc['reso']
-        if reso not in ('lo', 'med', 'hi'):
-            raise ValueError(f'Invalid resolution {reso!r}.')
         reso = {
             'lo': '110m',
             'med': '50m',
             'hi': '10m',
-        }.get(reso)
+        }.get(rc['reso'])  # already validated
         features = {
             'land': ('physical', 'land'),
             'ocean': ('physical', 'ocean'),

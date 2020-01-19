@@ -21,7 +21,7 @@ import numpy as np
 import numpy.ma as ma
 import matplotlib.colors as mcolors
 import matplotlib.cm as mcm
-from .utils import _warn_proplot, _notNone, _timer
+from .cbook import _notNone, _timer, _warn_proplot
 from .external import hsluv
 try:  # use this for debugging instead of print()!
     from icecream import ic

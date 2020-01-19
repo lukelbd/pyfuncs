@@ -195,8 +195,17 @@ for style in get_all_styles():
         f.write(HtmlFormatter(style=style).get_style_defs('.highlight'))
 
 # Create sample .proplotrc file
-from proplot.rctools import _write_defaults  # noqa: E402
-_write_defaults(os.path.join('_static', 'proplotrc'), comment=False)
+from proplot.rctools import _write_default_rc_file  # noqa: E402
+_write_default_rc_file(os.path.join('_static', 'proplotrc'), comment=False)
+
+# Create params_long and params_short tables
+from proplot.rctools import _write_default_rst_table  # noqa: E402
+_write_default_rst_table(
+    os.path.join('_static', 'rcParamsShort.rst'), cat='short', table=True
+)
+_write_default_rst_table(
+    os.path.join('_static', 'rcParamsLong.rst'), cat='short', table=True
+)
 
 # Role
 # default family is py, but can also set default role so don't need
