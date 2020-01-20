@@ -92,6 +92,186 @@ STYLE_ARGS_TRANSLATE = {
 }
 
 
+class _InsetColorbar(martist.Artist):
+    """
+    Hidden class for inset colorbars.
+    """
+    # NOTE: Add this to matplotlib directly?
+    # TODO: Write this! Features currently implemented in axes
+    # colorbar method.
+
+
+class _CenteredLegend(martist.Artist):
+    """
+    Hidden class for legends with centered rows.
+    """
+    # NOTE: Add this to matplotlib directly?
+    # TODO: Embed entire "centered row" feature in this class instead
+    # of in hacky legend wrapper!
+    def __str__(self):
+        return 'CenteredLegend'
+
+    def __init__(
+            self, pairs, loc=None, title=None, markerfirst=None,
+            frameon=None, framealpha=None, fancybox=None, shadow=None,
+            **kwargs):
+        """
+        Parameters
+        ----------
+        pairs : None
+            The legend pairs.
+        loc : str, optional
+            The legend location.
+        fancybox : bool, optional
+            Whether to use rectangle or rounded box.
+        **kwargs
+            Passed to `~matplotlib.legend.Legend`.
+        """
+        # Legend location
+        loc = _notNone(loc, 'upper center')
+        if not isinstance(loc, str):
+            raise ValueError(
+                f'Invalid location {loc!r} for legend with center=True. '
+                'Must be a location *string*.')
+        elif loc == 'best':
+            _warn_proplot(
+                'For centered-row legends, cannot use "best" location. '
+                'Defaulting to "upper center".')
+
+        # Determine space we want sub-legend to occupy as fraction of height
+        # NOTE: Empirical testing shows spacing fudge factor necessary to
+        # exactly replicate the spacing of standard aligned legends.
+        legs = []
+        ymin, ymax = None, None
+        width, height = self.figure.get_size_inches()
+        fontsize = kwargs.get('fontsize', None) or rc['legend.fontsize']
+        spacing = kwargs.get('labelspacing', None) or rc['legend.labelspacing']
+        interval = 1 / len(pairs)  # split up axes
+        interval = (((1 + spacing * 0.85) * fontsize) / 72) / height
+        for i, ipairs in enumerate(pairs):
+            if i == 1:
+                kwargs.pop('title', None)
+            if i >= 1 and title is not None:
+                i += 1  # extra space!
+
+            # Legend position
+            if 'upper' in loc:
+                y1 = 1 - (i + 1) * interval
+                y2 = 1 - i * interval
+            elif 'lower' in loc:
+                y1 = (len(pairs) + i - 2) * interval
+                y2 = (len(pairs) + i - 1) * interval
+            else:  # center
+                y1 = 0.5 + interval * len(pairs) / 2 - (i + 1) * interval
+                y2 = 0.5 + interval * len(pairs) / 2 - i * interval
+            ymin = min(y1, _notNone(ymin, y1))
+            ymax = max(y2, _notNone(ymax, y2))
+
+            # Draw legend
+            bbox = mtransforms.Bbox([[0, y1], [1, y2]])
+            leg = mlegend.Legend(
+                self, *zip(*ipairs), loc=loc, ncol=len(ipairs),
+                bbox_transform=self.transAxes, bbox_to_anchor=bbox,
+                frameon=False, **kwargs)
+            legs.append(leg)
+
+        # Store legend and add frame
+        self.legs = legs
+        if not frameon:
+            return
+        if len(legs) == 1:
+            legs[0].set_frame_on(True)  # easy!
+            return
+
+        # Draw legend frame encompassing centered rows
+        edgecolor = _notNone(
+            kwargs.get('edgecolor', None), rc['legend.edgecolor'])
+        facecolor = _notNone(
+            kwargs.get('facecolor', None), rc['legend.facecolor'])
+        if facecolor == 'inherit':
+            facecolor = rc['axes.facecolor']
+        patch = mpatches.FancyBboxPatch(
+            xy=(0.0, 0.0), width=1.0, height=1.0,
+            facecolor=facecolor,
+            edgecolor=edgecolor,
+            mutation_scale=fontsize,
+            transform=self.transAxes,
+            snap=True)
+        self.legendPatch = patch
+
+        # Box style
+        if fancybox is None:
+            fancybox = rc['legend.fancybox']
+        if fancybox:
+            patch.set_boxstyle('round', pad=0, rounding_size=0.2)
+        else:
+            patch.set_boxstyle('square', pad=0)
+        self._set_artist_props(patch)
+        self._drawFrame = frameon
+
+        # Initialize with null renderer
+        self._init_legend_box(*pairs, markerfirst)
+
+        # If shadow is activated use framealpha if not
+        # explicitly passed. See Issue 8943
+        if framealpha is None:
+            if shadow:
+                self.get_frame().set_alpha(1)
+            else:
+                self.get_frame().set_alpha(rc['legend.framealpha'])
+        else:
+            self.get_frame().set_alpha(framealpha)
+
+        if kwargs.get('fancybox', rc['legend.fancybox']):
+            patch.set_boxstyle('round', pad=0, rounding_size=0.2)
+        else:
+            patch.set_boxstyle('square', pad=0)
+        patch.set_clip_on(False)
+        # patch.update(outline)
+        self.add_artist(patch)
+        # Add shadow
+        # TODO: This does not work, figure out
+        if kwargs.get('shadow', rc['legend.shadow']):
+            shadow = mpatches.Shadow(patch, 20, -20)
+            self.add_artist(shadow)
+
+    def draw(self, renderer):
+        """
+        Draw the legend and the patch.
+        """
+        legs = self.legs
+        for leg in legs:
+            leg.draw(renderer)
+
+        renderer.open_group('legend')
+        fontsize = renderer.points_to_pixels(self._fontsize)
+
+        # if mode == fill, set the width of the legend_box to the
+        # width of the parent (minus pads)
+        if self._mode in ['expand']:
+            pad = 2 * (self.borderaxespad + self.borderpad) * fontsize
+            self._legend_box.set_width(self.get_bbox_to_anchor().width - pad)
+
+        # update the location and size of the legend. This needs to
+        # be done in any case to clip the figure right.
+        bbox = self._legend_box.get_window_extent(renderer)
+        self.legendPatch.set_bounds(bbox.x0, bbox.y0,
+                                    bbox.width, bbox.height)
+        self.legendPatch.set_mutation_scale(fontsize)
+
+        if self._drawFrame:
+            if self.shadow:
+                shadow = mpatches.Shadow(self.legendPatch, 2, -2)
+                shadow.draw(renderer)
+
+            self.legendPatch.draw(renderer)
+
+        self._legend_box.draw(renderer)
+
+        renderer.close_group('legend')
+        self.stale = False
+
+
 def default_latlon(self, func, *args, latlon=True, **kwargs):
     """
     Wraps %(methods)s for `~proplot.axes.BasemapAxes`.
@@ -2242,8 +2422,7 @@ property-spec, optional
         raise ValueError(
             f'Invalid order {order!r}. Choose from '
             '"C" (row-major, default) and "F" (column-major).'
-        )
-    # may still be None, wait till later
+        )  # may still be None, wait till later
     ncol = _notNone(ncols, ncol, None, names=('ncols', 'ncol'))
     title = _notNone(label, title, None, names=('label', 'title'))
     frameon = _notNone(
@@ -2302,8 +2481,7 @@ property-spec, optional
     # This allows alternative workflow where user specifies labels when
     # creating the legend.
     pairs = []
-    # e.g. not including BarContainer
-    list_of_lists = (not hasattr(handles[0], 'get_label'))
+    list_of_lists = (not hasattr(handles[0], 'get_label'))  # e.g. BarContainer
     if labels is None:
         for handle in handles:
             if list_of_lists:
@@ -2372,17 +2550,16 @@ property-spec, optional
     width, height = self.get_size_inches()
     # Individual legend
     if not center:
-        # Optionally change order
+        # Change order
         # See: https://stackoverflow.com/q/10101141/4970632
         # Example: If 5 columns, but final row length 3, columns 0-2 have
         # N rows but 3-4 have N-1 rows.
         ncol = _notNone(ncol, 3)
         if order == 'C':
             fpairs = []
-            # split into rows
-            split = [pairs[i * ncol:(i + 1) * ncol]
+            split = [pairs[i * ncol:(i + 1) * ncol]  # split into rows
                      for i in range(len(pairs) // ncol + 1)]
-            # max possible row count, and columns in final row
+            # Max possible row count, and columns in final row
             nrowsmax, nfinalrow = len(split), len(split[-1])
             nrows = [nrowsmax] * nfinalrow + \
                 [nrowsmax - 1] * (ncol - nfinalrow)
@@ -2495,47 +2672,7 @@ property-spec, optional
         for obj in leg.get_texts():
             if isinstance(obj, martist.Artist):
                 obj.update(kw_text)
-    # Draw manual fancy bounding box for un-aligned legend
-    # WARNING: The matplotlib legendPatch transform is the default transform,
-    # i.e. universal coordinates in points. Means we have to transform
-    # mutation scale into transAxes sizes.
-    # WARNING: Tempting to use legendPatch for everything but for some reason
-    # coordinates are messed up. In some tests all coordinates were just result
-    # of get window extent multiplied by 2 (???). Anyway actual box is found in
-    # _legend_box attribute, which is accessed by get_window_extent.
-    if center and frameon:
-        if len(legs) == 1:
-            legs[0].set_frame_on(True)  # easy!
-        else:
-            # Get coordinates
-            renderer = self.figure._get_renderer()
-            bboxs = [leg.get_window_extent(renderer).transformed(
-                self.transAxes.inverted()) for leg in legs]
-            xmin, xmax = min(bbox.xmin for bbox in bboxs), max(
-                bbox.xmax for bbox in bboxs)
-            ymin, ymax = min(bbox.ymin for bbox in bboxs), max(
-                bbox.ymax for bbox in bboxs)
-            fontsize = (fontsize / 72) / width  # axes relative units
-            fontsize = renderer.points_to_pixels(fontsize)
-            # Draw and format patch
-            patch = mpatches.FancyBboxPatch(
-                (xmin, ymin), xmax - xmin, ymax - ymin,
-                snap=True, zorder=4.5,
-                mutation_scale=fontsize, transform=self.transAxes)
-            if kwargs.get('fancybox', rc['legend.fancybox']):
-                patch.set_boxstyle('round', pad=0, rounding_size=0.2)
-            else:
-                patch.set_boxstyle('square', pad=0)
-            patch.set_clip_on(False)
-            patch.update(outline)
-            self.add_artist(patch)
-            # Add shadow
-            # TODO: This does not work, figure out
-            if kwargs.get('shadow', rc['legend.shadow']):
-                shadow = mpatches.Shadow(patch, 20, -20)
-                self.add_artist(shadow)
-            # Add patch to list
-            legs = (patch, *legs)
+
     # Append attributes and return, and set clip property!!! This is critical
     # for tight bounding box calcs!
     for leg in legs:
