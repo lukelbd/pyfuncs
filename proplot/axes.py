@@ -116,16 +116,13 @@ def _parse_format(mode=2, rc_kw=None, **kwargs):
 class Axes(maxes.Axes):
     """Lowest-level axes subclass. Handles titles and axis
     sharing. Adds several new methods and overrides existing ones."""
-    def __init__(self, *args, number=None, main=False, **kwargs):
+    def __init__(self, *args, number=None, **kwargs):
         """
         Parameters
         ----------
         number : int
             The subplot number, used for a-b-c labeling. See `~Axes.format`
             for details. Note the first axes is ``1``, not ``0``.
-        main : bool, optional
-            Used internally, indicates whether this is a "main axes" rather
-            than a twin, panel, or inset axes.
         *args, **kwargs
             Passed to `~matplotlib.axes.Axes`.
 
@@ -166,8 +163,6 @@ class Axes(maxes.Axes):
         self._alty_parent = None
         self._altx_parent = None
         self.number = number  # for abc numbering
-        if main:
-            self.figure._axes_main.append(self)
 
         # On-the-fly legends and colorbars
         self._auto_colorbar = {}
@@ -357,10 +352,10 @@ class Axes(maxes.Axes):
             raise RuntimeError(f'Axes is not a subplot.')
         ss = self.get_subplotspec()
         if x == 'x':
-            _, _, _, _, col1, col2 = ss.get_active_rows_columns()
+            _, _, _, _, col1, col2 = ss.get_rows_columns()
             return col1, col2
         else:
-            _, _, row1, row2, _, _ = ss.get_active_rows_columns()
+            _, _, row1, row2, _, _ = ss.get_rows_columns()
             return row1, row2
 
     def _range_tightbbox(self, x):
@@ -383,6 +378,7 @@ class Axes(maxes.Axes):
         # Place column and row labels on panels instead of axes -- works when
         # this is called on the main axes *or* on the relevant panel itself
         # TODO: Mixed figure panels with super labels? How does that work?
+        # TODO: Remove this when panels implemented as stacks!
         if side == self._panel_side:
             ax = self._panel_parent
         else:
@@ -413,6 +409,7 @@ class Axes(maxes.Axes):
         # called on the main axes *or* on the top panel itself. This is
         # critical for bounding box calcs; not always clear whether draw() and
         # get_tightbbox() are called on the main axes or panel first
+        # TODO: Remove this when panels implemented as stacks!
         if self._panel_side == 'top' and self._panel_parent:
             ax = self._panel_parent
         else:
@@ -960,7 +957,6 @@ optional
             For outer colorbars only. The space between the colorbar and the
             main axes. Units are interpreted by `~proplot.utils.units`.
             When :rcraw:`tight` is ``True``, this is adjusted automatically.
-            Otherwise, the default is :rc:`subplots.panelpad`.
         frame, frameon : bool, optional
             For inset colorbars, indicates whether to draw a "frame", just
             like `~matplotlib.axes.Axes.legend`. Default is
@@ -996,8 +992,9 @@ optional
             self.patch.set_alpha(0)
             self._panel_filled = True
 
-            # Draw colorbar with arbitrary length relative to full length
-            # of panel
+            # Draw colorbar with arbitrary length relative to full panel length
+            # TODO: Can completely remove references to GridSpecFromSubplotSpec
+            # if implement colorbars as "parasite" objects instead.
             side = self._panel_side
             length = _notNone(length, rc['colorbar.length'])
             subplotspec = self.get_subplotspec()
@@ -1020,10 +1017,9 @@ optional
                     height_ratios=((1 - length) / 2, length, (1 - length) / 2),
                 )
                 subplotspec = gridspec[1]
-            with self.figure._authorize_add_subplot():
-                ax = self.figure.add_subplot(subplotspec, projection=None)
-            if ax is self:
-                raise ValueError  # should never happen
+            ax = self.figure.add_subplot(
+                subplotspec, main=False, projection=None
+            )
             self.add_child_axes(ax)
 
             # Location
@@ -1197,7 +1193,6 @@ optional
             For outer legends only. The space between the axes and the legend
             box. Units are interpreted by `~proplot.utils.units`.
             When :rcraw:`tight` is ``True``, this is adjusted automatically.
-            Otherwise, the default is :rc:`subplots.panelpad`.
 
         Other parameters
         ----------------
@@ -1426,7 +1421,6 @@ optional
         space : float or str or list thereof, optional
             Empty space between the main subplot and the panel.
             When :rcraw:`tight` is ``True``, this is adjusted automatically.
-            Otherwise, the default is :rc:`subplots.panelpad`.
         share : bool, optional
             Whether to enable axis sharing between the *x* and *y* axes of the
             main subplot and the panel long axes for each panel in the stack.
@@ -2691,8 +2685,7 @@ class XYAxes(Axes):
         # See https://github.com/matplotlib/matplotlib/blob/master/lib/matplotlib/axes/_subplots.py  # noqa
         if self._altx_child or self._altx_parent:
             raise RuntimeError('No more than *two* twin axes are allowed.')
-        with self.figure._authorize_add_subplot():
-            ax = self._make_twin_axes(sharey=self, projection='xy')
+        ax = self._make_twin_axes(sharey=self, projection='xy')
         ax.set_autoscaley_on(self.get_autoscaley_on())
         ax.grid(False)
         self._altx_child = ax
@@ -2708,8 +2701,7 @@ class XYAxes(Axes):
         """This docstring is replaced below."""
         if self._alty_child or self._alty_parent:
             raise RuntimeError('No more than *two* twin axes are allowed.')
-        with self.figure._authorize_add_subplot():
-            ax = self._make_twin_axes(sharex=self, projection='xy')
+        ax = self._make_twin_axes(sharex=self, projection='xy')
         ax.set_autoscalex_on(self.get_autoscalex_on())
         ax.grid(False)
         self._alty_child = ax
