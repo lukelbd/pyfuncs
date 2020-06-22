@@ -15,22 +15,15 @@ from .. import constructor
 from .. import crs as pcrs
 from ..config import rc
 from ..internals import ic  # noqa: F401
-from ..internals import _not_none, _version, _version_cartopy, docstring, warnings
-from . import base
-from .plot import (
-    _basemap_norecurse,
-    _basemap_redirect,
-    _cmap_changer,
-    _cycle_changer,
-    _default_latlon,
-    _default_transform,
-    _indicate_error,
-    _plot_wrapper,
-    _scatter_wrapper,
-    _standardize_1d,
-    _standardize_2d,
-    _text_wrapper,
+from ..internals import (
+    _not_none,
+    _state_context,
+    _version,
+    _version_cartopy,
+    docstring,
+    warnings,
 )
+from . import base
 
 try:
     import cartopy.crs as ccrs
@@ -737,13 +730,15 @@ class CartopyAxes(GeoAxes, GeoAxesBase):
             elif isinstance(map_projection, pcrs.SouthPolarGnomonic):
                 boundinglat = -30
 
-        # Initialize axes
         self._boundinglat = None  # NOTE: must start at None so _update_extent acts
         self._map_projection = map_projection  # cartopy also does this
+
         self._gridlines_major = None
         self._gridlines_minor = None
+
         self._lonaxis = _LonAxis(self, projection=map_projection)
         self._lataxis = _LatAxis(self, latmax=latmax, projection=map_projection)
+
         super().__init__(*args, map_projection=map_projection, **kwargs)
 
         # Apply circular map boundary for polar projections. Apply default
@@ -1162,50 +1157,73 @@ class CartopyAxes(GeoAxes, GeoAxesBase):
             raise ValueError('Projection must be a cartopy.crs.CRS instance.')
         self._map_projection = map_projection
 
-    # Wrapped methods
-    # TODO: Remove this duplication!
-    # NOTE: Do not wrap fill_between because it is broken in cartopy
-    if GeoAxesBase is not object:
-        text = _text_wrapper(
-            GeoAxesBase.text
-        )
-        fill = _default_transform(GeoAxesBase.fill)
-        plot = _default_transform(_plot_wrapper(_standardize_1d(
-            _indicate_error(_cycle_changer(GeoAxesBase.plot))
-        )))
-        scatter = _default_transform(_scatter_wrapper(_standardize_1d(
-            _indicate_error(_cycle_changer(GeoAxesBase.scatter))
-        )))
-        contour = _default_transform(_standardize_2d(_cmap_changer(
-            GeoAxesBase.contour
-        )))
-        contourf = _default_transform(_standardize_2d(_cmap_changer(
-            GeoAxesBase.contourf
-        )))
-        pcolor = _default_transform(_standardize_2d(_cmap_changer(
-            GeoAxesBase.pcolor
-        )))
-        pcolormesh = _default_transform(_standardize_2d(_cmap_changer(
-            GeoAxesBase.pcolormesh
-        )))
-        quiver = _default_transform(_standardize_2d(_cmap_changer(
-            GeoAxesBase.quiver
-        )))
-        streamplot = _default_transform(_standardize_2d(_cmap_changer(
-            GeoAxesBase.streamplot
-        )))
-        barbs = _default_transform(_standardize_2d(_cmap_changer(
-            GeoAxesBase.barbs
-        )))
-        tripcolor = _default_transform(_cmap_changer(
-            GeoAxesBase.tripcolor
-        ))
-        tricontour = _default_transform(_cmap_changer(
-            GeoAxesBase.tricontour
-        ))
-        tricontourf = _default_transform(_cmap_changer(
-            GeoAxesBase.tricontourf
-        ))
+    # Undocumented plotting overrides
+    # TODO: Clean way to inject 'transform' argument
+    def barbs(self, *args, transform=None, **kwargs):
+        # Apply default transform
+        transform = _not_none(transform, ccrs.PlateCarree())
+        return super().barbs(*args, transform=transform, **kwargs)
+
+    def contour(self, *args, transform=None, **kwargs):
+        # Apply default transform
+        transform = _not_none(transform, ccrs.PlateCarree())
+        return super().contour(*args, transform=transform, **kwargs)
+
+    def contourf(self, *args, transform=None, **kwargs):
+        # Apply default transform
+        transform = _not_none(transform, ccrs.PlateCarree())
+        return super().contourf(*args, transform=transform, **kwargs)
+
+    def fill(self, *args, transform=None, **kwargs):
+        # Apply default transform
+        # NOTE: Do not wrap fill_between because it is broken in cartopy.
+        transform = _not_none(transform, ccrs.PlateCarree())
+        return super().fill(*args, transform=transform, **kwargs)
+
+    def plot(self, *args, transform=None, **kwargs):
+        # Apply default transform
+        transform = _not_none(transform, ccrs.PlateCarree())
+        return super().plot(*args, transform=transform, **kwargs)
+
+    def pcolor(self, *args, transform=None, **kwargs):
+        # Apply default transform
+        transform = _not_none(transform, ccrs.PlateCarree())
+        return super().pcolor(*args, transform=transform, **kwargs)
+
+    def pcolormesh(self, *args, transform=None, **kwargs):
+        # Apply default transform
+        transform = _not_none(transform, ccrs.PlateCarree())
+        return super().pcolormesh(*args, transform=transform, **kwargs)
+
+    def quiver(self, *args, transform=None, **kwargs):
+        # Apply default transform
+        transform = _not_none(transform, ccrs.PlateCarree())
+        return super().quiver(*args, transform=transform, **kwargs)
+
+    def scatter(self, *args, transform=None, **kwargs):
+        # Apply default transform
+        transform = _not_none(transform, ccrs.PlateCarree())
+        return super().scatter(*args, transform=transform, **kwargs)
+
+    def streamplot(self, *args, transform=None, **kwargs):
+        # Apply default transform
+        transform = _not_none(transform, ccrs.PlateCarree())
+        return super().streamplot(*args, transform=transform, **kwargs)
+
+    def tricontour(self, *args, transform=None, **kwargs):
+        # Apply default transform
+        transform = _not_none(transform, ccrs.PlateCarree())
+        return super().tricontour(*args, transform=transform, **kwargs)
+
+    def tricontourf(self, *args, transform=None, **kwargs):
+        # Apply default transform
+        transform = _not_none(transform, ccrs.PlateCarree())
+        return super().tricontourf(*args, transform=transform, **kwargs)
+
+    def tripcolor(self, *args, transform=None, **kwargs):
+        # Apply default transform
+        transform = _not_none(transform, ccrs.PlateCarree())
+        return super().tripcolor(*args, transform=transform, **kwargs)
 
 
 class BasemapAxes(GeoAxes):
@@ -1257,8 +1275,7 @@ class BasemapAxes(GeoAxes):
             raise ValueError(
                 'BasemapAxes requires map_projection=basemap.Basemap'
             )
-        map_projection = copy.copy(map_projection)
-        self._map_projection = map_projection
+        self._map_projection = map_projection = copy.copy(map_projection)
         lon0 = self._get_lon0()
         if map_projection.projection in self._proj_polar:
             latmax = 80  # default latmax for gridlines
@@ -1275,16 +1292,19 @@ class BasemapAxes(GeoAxes):
             if any(_ is None for _ in extent):
                 extent = [180 - lon0, 180 + lon0, -90, 90]  # fallback
 
-        # Initialize axes
+        self._called_from_basemap = False  # used to override plotting methods
+
         self._map_boundary = None  # start with empty map boundary
-        self._has_recurred = False  # use this to override plotting methods
+
         self._lonlines_major = None  # store gridliner objects this way
         self._lonlines_minor = None
         self._latlines_major = None
         self._latlines_minor = None
+
         self._lonaxis = _LonAxis(self)
         self._lataxis = _LatAxis(self, latmax=latmax)
         self._set_view_intervals(extent)
+
         super().__init__(*args, **kwargs)
 
     def _get_lon0(self):
@@ -1303,6 +1323,16 @@ class BasemapAxes(GeoAxes):
             for pj in pi:
                 for obj in pj:
                     yield obj
+
+    def _plot_norecurse(self, name, *args, **kwargs):
+        """
+        Call the plotting method and avoid recursion.
+        """
+        if self._called_from_basemap:
+            return getattr(maxes.Axes, name)(self, *args, **kwargs)
+        else:
+            with _state_context(self, _called_from_basemap=True):
+                return getattr(super(), name)(self, *args, **kwargs)
 
     def _update_extent(self, lonlim=None, latlim=None, boundinglat=None):
         """
@@ -1498,37 +1528,49 @@ class BasemapAxes(GeoAxes):
             raise ValueError('Projection must be a basemap.Basemap instance.')
         self._map_projection = map_projection
 
-    # Wrapped methods
-    plot = _basemap_norecurse(_default_latlon(_plot_wrapper(_standardize_1d(
-        _indicate_error(_cycle_changer(_basemap_redirect(maxes.Axes.plot)))
-    ))))
-    scatter = _basemap_norecurse(_default_latlon(_scatter_wrapper(_standardize_1d(
-        _indicate_error(_cycle_changer(_basemap_redirect(maxes.Axes.scatter)))
-    ))))
-    contour = _basemap_norecurse(_default_latlon(_standardize_2d(_cmap_changer(
-        _basemap_redirect(maxes.Axes.contour)
-    ))))
-    contourf = _basemap_norecurse(_default_latlon(_standardize_2d(_cmap_changer(
-        _basemap_redirect(maxes.Axes.contourf)
-    ))))
-    pcolor = _basemap_norecurse(_default_latlon(_standardize_2d(_cmap_changer(
-        _basemap_redirect(maxes.Axes.pcolor)
-    ))))
-    pcolormesh = _basemap_norecurse(_default_latlon(_standardize_2d(_cmap_changer(
-        _basemap_redirect(maxes.Axes.pcolormesh)
-    ))))
-    quiver = _basemap_norecurse(_default_latlon(_standardize_2d(_cmap_changer(
-        _basemap_redirect(maxes.Axes.quiver)
-    ))))
-    streamplot = _basemap_norecurse(_default_latlon(_standardize_2d(_cmap_changer(
-        _basemap_redirect(maxes.Axes.streamplot)
-    ))))
-    barbs = _basemap_norecurse(_default_latlon(_standardize_2d(_cmap_changer(
-        _basemap_redirect(maxes.Axes.barbs)
-    ))))
-    hexbin = _basemap_norecurse(_standardize_1d(_cmap_changer(
-        _basemap_redirect(maxes.Axes.hexbin)
-    )))
-    imshow = _basemap_norecurse(_cmap_changer(
-        _basemap_redirect(maxes.Axes.imshow)
-    ))
+    # Undocumented plotting overrides
+    # NOTE: Simpler to document latlon=True and transform=PlateCarree()
+    # default behavior in 'Note' boxes on all base plotting methods.
+    def barbs(self, *args, latlon=True, **kwargs):
+        # Use latlon=True by default
+        return self._plot_norecurse('barbs', *args, latlon=latlon, **kwargs)
+
+    def contour(self, *args, latlon=True, **kwargs):
+        # Use latlon=True by default
+        return self._plot_norecurse('contour', *args, latlon=latlon, **kwargs)
+
+    def contourf(self, *args, latlon=True, **kwargs):
+        # Use latlon=True by default
+        return self._plot_norecurse('contourf', *args, latlon=latlon, **kwargs)
+
+    def hexbin(self, *args, latlon=True, **kwargs):
+        # Use latlon=True by default
+        return self._plot_norecurse('hexbin', *args, latlon=latlon, **kwargs)
+
+    def imshow(self, *args, latlon=True, **kwargs):
+        # Use latlon=True by default
+        return self._plot_norecurse('imshow', *args, latlon=latlon, **kwargs)
+
+    def pcolor(self, *args, latlon=True, **kwargs):
+        # Use latlon=True by default
+        return self._plot_norecurse('pcolor', *args, latlon=latlon, **kwargs)
+
+    def pcolormesh(self, *args, latlon=True, **kwargs):
+        # Use latlon=True by default
+        return self._plot_norecurse('pcolormesh', *args, latlon=latlon, **kwargs)
+
+    def plot(self, *args, latlon=True, **kwargs):
+        # Use latlon=True by default
+        return self._plot_norecurse('plot', *args, latlon=latlon, **kwargs)
+
+    def quiver(self, *args, latlon=True, **kwargs):
+        # Use latlon=True by default
+        return self._plot_norecurse('quiver', *args, latlon=latlon, **kwargs)
+
+    def scatter(self, *args, latlon=True, **kwargs):
+        # Use latlon=True by default
+        return self._plot_norecurse('scatter', *args, latlon=latlon, **kwargs)
+
+    def streamplot(self, *args, latlon=True, **kwargs):
+        # Use latlon=True by default
+        return self._plot_norecurse('streamplot', *args, latlon=latlon, **kwargs)

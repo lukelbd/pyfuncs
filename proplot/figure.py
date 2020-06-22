@@ -12,7 +12,7 @@ from . import axes as paxes
 from . import gridspec as pgridspec
 from .config import rc
 from .internals import ic  # noqa: F401
-from .internals import _dummy_context, _not_none, _state_context, warnings
+from .internals import _dummy_context, _not_none, _state_context, docstring, warnings
 from .utils import units
 
 __all__ = ['Figure']
@@ -1101,6 +1101,7 @@ class Figure(mfigure.Figure):
         self._align_axis_labels(True)
         self._align_subplot_super_labels(renderer)
 
+    @docstring.add_snippets
     def colorbar(
         self, *args,
         loc='r', width=None, space=None,
@@ -1114,6 +1115,7 @@ class Figure(mfigure.Figure):
 
         Parameters
         ----------
+        %(plot.colorbar_args)s
         loc : str, optional
             The colorbar location. Valid location keys are as follows.
 
@@ -1146,11 +1148,12 @@ class Figure(mfigure.Figure):
         width : float or str, optional
             The colorbar width. Units are interpreted by
             `~proplot.utils.units`. Default is :rc:`colorbar.width`.
+        %(plot.colorbar_kwargs)s
 
         Other parameters
         ----------------
-        *args, **kwargs
-            Passed to `~proplot.axes.colorbar_wrapper`.
+        **kwargs
+            Passed to `~matplotlib.axes.Axes.colorbar`.
         """
         ax = kwargs.pop('ax', None)
         cax = kwargs.pop('cax', None)
@@ -1171,6 +1174,7 @@ class Figure(mfigure.Figure):
         )
         return ax.colorbar(*args, loc='fill', **kwargs)
 
+    @docstring.add_snippets
     def legend(
         self, *args,
         loc='r', width=None, space=None,
@@ -1184,6 +1188,7 @@ class Figure(mfigure.Figure):
 
         Parameters
         ----------
+        %(plot.legend_args)s
         loc : str, optional
             The legend location. Valid location keys are as follows.
 
@@ -1213,11 +1218,12 @@ class Figure(mfigure.Figure):
             by `~proplot.utils.units`. By default, this is adjusted
             automatically in the "tight layout" calculation, or is
             :rc:`subplots.panelpad` if "tight layout" is turned off.
+        %(plot.legend_kwargs)s
 
         Other parameters
         ----------------
-        *args, **kwargs
-            Passed to `~proplot.axes.legend_wrapper`.
+        **kwargs
+            Passed to `~matplotlib.axes.Axes.legend`.
         """
         ax = kwargs.pop('ax', None)
 

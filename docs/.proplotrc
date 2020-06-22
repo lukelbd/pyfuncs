@@ -1,3 +1,4 @@
 # Use SVG because quality of examples is highest priority
 # Tested SVG vs. PNG and speeds are comparable!
 inlinefmt: svg
+docstring.hardcopy: true

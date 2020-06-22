@@ -8,12 +8,19 @@ import inspect
 snippets = {}
 
 
-def add_snippets(func):
-    """Decorator that dedents docstrings with `inspect.getdoc` and adds
-    un-indented snippets from the global `snippets` dictionary. This function
-    uses ``%(name)s`` substitution rather than `str.format` substitution so
-    that the `snippets` keys can be invalid variable names."""
-    func.__doc__ = inspect.getdoc(func)
-    if func.__doc__:
-        func.__doc__ %= {key: value.strip() for key, value in snippets.items()}
-    return func
+def add_snippets(arg):
+    """
+    Add un-indented snippets from the global `snippets` dictionary to the input
+    string or function docstring. Also *dedent* the docstring with `inspect.getdoc`
+    before adding snippets if the input is a function. This function uses C-style
+    ``%(name)s`` substitution rather than `str.format` substitution so that the
+    `snippets` keys do not have to be valid identifiers.
+    """
+    snippets_stripped = {key: value.strip() for key, value in snippets.items()}
+    if isinstance(arg, str):
+        arg %= snippets_stripped
+    else:
+        arg.__doc__ = inspect.getdoc(arg)
+        if arg.__doc__:
+            arg.__doc__ %= snippets_stripped
+    return arg
