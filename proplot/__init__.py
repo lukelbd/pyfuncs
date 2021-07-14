@@ -21,6 +21,7 @@ with _timers._benchmark('imports'):
     from .figure import *  # noqa: F401 F403
     from .ui import *  # noqa: F401 F403
     from .demos import *  # noqa: F401 F403
+    from .artist import *  # noqa: F401 F403
 
 # SCM versioning
 name = 'proplot'

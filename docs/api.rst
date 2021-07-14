@@ -116,6 +116,15 @@ Gridspec classes
    :toctree: api
 
 
+Artist subclass
+===============
+
+.. automodule:: proplot.artist
+
+.. automodsumm:: proplot.artist
+   :toctree: api
+
+
 Miscellaneous tools
 ===================
 
